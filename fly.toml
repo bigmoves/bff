@@ -1,0 +1,28 @@
+# fly.toml app configuration file generated for bff-blog on 2025-04-08T12:35:37-07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'bff-blog'
+primary_region = 'sea'
+
+[build]
+  dockerfile = './examples/blog/Dockerfile'
+
+[env]
+  BFF_STATIC_DIR = './examples/blog/'
+  BFF_PORT = '8080'
+  BFF_PUBLIC_URL = 'https://bff-blog.fly.dev'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1

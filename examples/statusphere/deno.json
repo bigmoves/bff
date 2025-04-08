@@ -1,0 +1,23 @@
+{
+  "imports": {
+    "@atproto/lexicon": "npm:@atproto/lexicon@^0.4.10",
+    "@atproto/xrpc-server": "npm:@atproto/xrpc-server@^0.7.15",
+    "@atproto/lex-cli": "npm:@atproto/lex-cli@^0.7.2",
+    "@std/fs": "jsr:@std/fs@^1.0.15",
+    "multiformats": "npm:multiformats@^13.3.2",
+    "preact": "npm:preact@^10.26.5",
+    "typed-htmx": "npm:typed-htmx@^0.3.1"
+  },
+  "tasks": {
+    "start": "deno run -A --watch main.tsx",
+    "gen-server": "lex gen-server --yes ./__generated__ ./lexicons/xyz/statusphere/*",
+    "codegen": {
+      "command": "deno run --unstable-sloppy-imports --allow-read --allow-write ./bin/unslopify.ts ./__generated__",
+      "dependencies": ["gen-server"]
+    }
+  },
+  "compilerOptions": {
+    "jsx": "precompile",
+    "jsxImportSource": "preact"
+  }
+}

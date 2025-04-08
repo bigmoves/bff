@@ -1,0 +1,9 @@
+{
+  "workspace": [
+    "./packages/bff",
+    "./examples/basic",
+    "./examples/blog",
+    "./examples/statusphere"
+  ],
+  "nodeModulesDir": "auto"
+}

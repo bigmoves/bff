@@ -1,0 +1,30 @@
+{
+  "imports": {
+    "@atproto/lexicon": "npm:@atproto/lexicon@^0.4.10",
+    "@atproto/syntax": "npm:@atproto/syntax@^0.4.0",
+    "@atproto/xrpc-server": "npm:@atproto/xrpc-server@^0.7.15",
+    "@atproto/lex-cli": "npm:@atproto/lex-cli@^0.7.2",
+    "@deno/gfm": "jsr:@deno/gfm@^0.10.0",
+    "@std/fs": "jsr:@std/fs@^1.0.15",
+    "@tailwindcss/cli": "npm:@tailwindcss/cli@^4.0.12",
+    "multiformats": "npm:multiformats@^13.3.2",
+    "preact": "npm:preact@^10.26.5",
+    "tailwindcss": "npm:tailwindcss@^4.0.12",
+    "typed-htmx": "npm:typed-htmx@^0.3.1"
+  },
+  "tasks": {
+    "dev": "deno run \"dev:*\"",
+    "dev:server": "deno run -A --watch ./main.tsx",
+    "dev:tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./input.css -o ./static/styles.css --watch",
+    "gen-server": "lex gen-server --yes ./__generated__ ./lexicons/com/whtwnd/blog/*",
+    "whtwnd": "deno run -A ./bin/whtwnd.ts && deno fmt ./lexicons/*",
+    "codegen": {
+      "command": "deno run --unstable-sloppy-imports --allow-read --allow-write ./bin/unslopify.ts ./__generated__",
+      "dependencies": ["gen-server"]
+    }
+  },
+  "compilerOptions": {
+    "jsx": "precompile",
+    "jsxImportSource": "preact"
+  }
+}
