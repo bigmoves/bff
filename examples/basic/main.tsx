@@ -1,7 +1,7 @@
 import { bff, CSS, oauth, RootProps } from "@bigmoves/bff";
 
 bff({
-  appName: "ATProto App",
+  appName: "AT Protocol App",
   publicUrl: "",
   collections: [],
   rootElement: Root,
@@ -13,11 +13,11 @@ bff({
       if (pathname === "/") {
         return ctx.render(
           <div class="text-center">
-            <h1 class="text-3xl font-bold">Hello from ATProto App</h1>
+            <h1 class="text-3xl font-bold">AT Protocol App</h1>
             {ctx.currentUser
               ? (
                 <p class="mt-4">
-                  @{ctx.currentUser?.handle}, welcome to your ATProto App!
+                  @{ctx.currentUser?.handle}, welcome to your AT Protocol App!
                 </p>
               )
               : null}
