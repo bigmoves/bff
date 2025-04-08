@@ -8,7 +8,7 @@ type Entry = WithBffMeta<EntryRecord>;
 const REPO = "did:plc:44ybard66vv44zksje25o7dz";
 
 bff({
-  appName: "ATProto Blog",
+  appName: "AT Protocol Blog",
   publicUrl: Deno.env.get("BFF_PUBLIC_URL") || "",
   collections: ["com.whtwnd.blog.entry"],
   unstable_backfillRepos: [REPO],
@@ -24,10 +24,10 @@ bff({
       if (homeMatch) {
         const entries = ctx.indexService.getRecords<Entry>(
           "com.whtwnd.blog.entry",
-          { column: "createdAt", direction: "asc" },
+          { column: "", direction: "asc" },
         );
 
-        const title = "ATProto Blog";
+        const title = "AT Protocol Blog";
         ctx.state.meta = {
           title: title,
           "og:title": title,

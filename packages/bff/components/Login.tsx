@@ -23,7 +23,7 @@ export function Login({ error }: Props) {
         />
       </div>
       <button id="submit" type="submit" class="btn btn-primary tw:w-full">
-        Login with ATProto
+        Login with AT Protocol
       </button>
       <div className="tw:h-4">
         {error ? <div className="tw:text-sm tw:font-mono">{error}</div> : null}
