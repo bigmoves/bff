@@ -16,19 +16,21 @@ import { deleteCookie, getCookies, setCookie } from "@std/http";
 import { serveDir } from "@std/http/file-server";
 import { join } from "@std/path/join";
 import { DatabaseSync } from "node:sqlite";
-import type { ComponentChildren, FunctionComponent } from "preact";
+import type { ComponentChildren } from "preact";
 import { render as renderToString } from "preact-render-to-string";
 import { Login } from "./components/Login.tsx";
 import { Jetstream } from "./jetstream.ts";
 import { CSS } from "./styles.ts";
 import type {
   ActorTable,
+  BffConfig,
   BffContext,
   BffMiddleware,
   Config,
   Database,
+  IndexService,
+  OauthMiddlewareOptions,
   OrderByOption,
-  Queries,
   RecordTable,
   RootProps,
 } from "./types.d.ts";
@@ -43,19 +45,20 @@ export type {
 export { CSS } from "./styles.ts";
 
 export async function bff(cfg: Config) {
-  const db = createDb(cfg);
-  const indexService = queries(db);
-  const oauthClient = createOauthClient(db, cfg);
-  const handler = createBffHandler(db, oauthClient, cfg);
-  const jetstream = createSubscription(indexService, cfg);
+  const bffConfig = configureBff(cfg);
+  const db = createDb(bffConfig);
+  const idxService = indexService(db);
+  const oauthClient = createOauthClient(db, bffConfig);
+  const handler = createBffHandler(db, oauthClient, bffConfig);
+  const jetstream = createSubscription(idxService, bffConfig);
 
   if (cfg.unstable_backfillRepos?.length) {
-    await backfillRepos(cfg, indexService);
+    await backfillRepos(bffConfig, idxService);
   }
 
   jetstream.connect();
 
-  Deno.serve({ port: cfg.port ?? 8080 }, handler);
+  Deno.serve({ port: bffConfig.port }, handler);
 
   Deno.addSignalListener("SIGINT", () => {
     console.log("Shutting down...");
@@ -64,8 +67,22 @@ export async function bff(cfg: Config) {
   });
 }
 
-function createDb(cfg: Config) {
-  const db = new DatabaseSync(cfg.databaseUrl ?? ":memory:");
+function configureBff(cfg: Config): BffConfig {
+  return {
+    ...cfg,
+    rootDir: Deno.env.get("BFF_ROOT_DIR") ?? Deno.cwd(),
+    publicUrl: Deno.env.get("BFF_PUBLIC_URL") ?? "",
+    port: Number(Deno.env.get("BFF_PORT")) || 8080,
+    lexiconDir: cfg.lexiconDir ?? "__generated__",
+    databaseUrl: cfg.databaseUrl ?? ":memory:",
+    oauthScope: cfg.oauthScope ?? "atproto transition:generic",
+    middlewares: cfg.middlewares ?? [],
+    rootElement: cfg.rootElement ?? Root,
+  };
+}
+
+function createDb(cfg: BffConfig) {
+  const db = new DatabaseSync(cfg.databaseUrl);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS "auth_session" (
@@ -97,7 +114,7 @@ function createDb(cfg: Config) {
   return db;
 }
 
-const queries = (db: Database): Queries => {
+const indexService = (db: Database): IndexService => {
   return {
     getRecords: <T extends Record<string, unknown>>(
       collection: string,
@@ -184,7 +201,7 @@ const queries = (db: Database): Queries => {
 function createBffHandler(
   db: Database,
   oauthClient: AtprotoOAuthClient,
-  cfg: Config,
+  cfg: BffConfig,
 ) {
   const inner = handler;
   const withMiddlewares = composeMiddlewares(db, oauthClient, cfg);
@@ -196,7 +213,7 @@ function createBffHandler(
 function composeMiddlewares(
   db: Database,
   oauthClient: AtprotoOAuthClient,
-  cfg: Config,
+  cfg: BffConfig,
 ) {
   return async (
     req: Request,
@@ -211,7 +228,7 @@ function composeMiddlewares(
     const didResolver = new DidResolver({
       didCache,
     });
-    const indexService = queries(db);
+    const idxService = indexService(db);
 
     let agent: Agent | undefined;
     let currentUser: ActorTable | undefined;
@@ -227,11 +244,11 @@ function composeMiddlewares(
     }
 
     if (agent) {
-      const actor = indexService.getActor(cookies.auth);
+      const actor = idxService.getActor(cookies.auth);
       currentUser = actor;
     }
 
-    const createRecordFn = createRecord(agent, indexService, cfg);
+    const createRecordFn = createRecord(agent, idxService, cfg);
 
     const ctx: BffContext = {
       state: {},
@@ -240,7 +257,7 @@ function composeMiddlewares(
         return Promise.resolve(handler());
       },
       oauthClient,
-      indexService,
+      indexService: idxService,
       currentUser,
       agent,
       createRecord: createRecordFn,
@@ -264,12 +281,12 @@ function composeMiddlewares(
   };
 }
 
-async function handler(req: Request, _ctx: BffContext) {
+async function handler(req: Request, ctx: BffContext) {
   const { pathname } = new URL(req.url);
 
   if (pathname.startsWith("/static/")) {
     return serveDir(req, {
-      fsRoot: Deno.env.get("BFF_STATIC_DIR"),
+      fsRoot: ctx.cfg.rootDir,
     });
   }
 
@@ -279,8 +296,8 @@ async function handler(req: Request, _ctx: BffContext) {
 }
 
 function createSubscription(
-  indexService: Queries,
-  cfg: Config,
+  indexService: IndexService,
+  cfg: BffConfig,
 ) {
   const jetstream = new Jetstream({
     instanceUrl: cfg.jetstreamUrl,
@@ -315,11 +332,11 @@ function createSubscription(
   return jetstream;
 }
 
-function createOauthClient(db: Database, cfg: Config) {
+function createOauthClient(db: Database, cfg: BffConfig) {
   const publicUrl = cfg.publicUrl;
-  const url = publicUrl || `http://127.0.0.1:${cfg.port ?? 8080}`;
+  const url = publicUrl || `http://127.0.0.1:${cfg.port}`;
   const enc = encodeURIComponent;
-  const scope = cfg.oauthScope ?? "atproto transition:generic";
+  const scope = cfg.oauthScope;
 
   return new AtprotoOAuthClient({
     responseMode: "query",
@@ -392,14 +409,14 @@ function createSessionStore(db: Database): NodeSavedSessionStore {
 
 function createRecord(
   agent: Agent | undefined,
-  indexService: ReturnType<typeof queries>,
-  cfg: Config,
+  indexService: IndexService,
+  cfg: BffConfig,
 ) {
   return async (collection: string, data: { [_ in string]: unknown }) => {
     const did = agent?.assertDid;
     const lexiconsFile = join(
       Deno.cwd(),
-      cfg.lexiconDir ?? "__generated__",
+      cfg.lexiconDir,
       "lexicons.ts",
     );
     const lex = await import(lexiconsFile);
@@ -438,9 +455,9 @@ function createRecord(
   };
 }
 
-function render(ctx: BffContext, cfg: Config) {
+function render(ctx: BffContext, cfg: BffConfig) {
   return (children: ComponentChildren) => {
-    const RootElement = cfg.rootElement ?? Root;
+    const RootElement = cfg.rootElement;
     return new Response(
       renderToString(<RootElement ctx={ctx}>{children}</RootElement>),
       {
@@ -465,10 +482,6 @@ function Root(props: RootProps) {
     </html>
   );
 }
-
-type OauthMiddlewareOptions = {
-  LoginComponent?: FunctionComponent<{ error?: string }>;
-};
 
 export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
   return async (req, ctx) => {
@@ -583,8 +596,8 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
 }
 
 async function backfillRepos(
-  cfg: Config,
-  indexService: ReturnType<typeof queries>,
+  cfg: BffConfig,
+  indexService: IndexService,
 ) {
   if (!cfg.unstable_backfillRepos) return;
 

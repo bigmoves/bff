@@ -9,7 +9,6 @@ const REPO = "did:plc:44ybard66vv44zksje25o7dz";
 
 bff({
   appName: "AT Protocol Blog",
-  publicUrl: Deno.env.get("BFF_PUBLIC_URL") || "",
   collections: ["com.whtwnd.blog.entry"],
   unstable_backfillRepos: [REPO],
   rootElement: Root,

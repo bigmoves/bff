@@ -3,7 +3,7 @@ import type { Response as SessionResponse } from "@atproto/api/dist/client/types
 import type { DidResolver } from "@atproto/identity";
 import type { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
 import type { DatabaseSync } from "node:sqlite";
-import type { ComponentChildren } from "preact";
+import type { ComponentChildren, FunctionComponent } from "preact";
 
 export type Database = DatabaseSync;
 
@@ -36,22 +36,35 @@ export type BffMiddleware = (
   ctx: BffContext,
 ) => Promise<Response>;
 
+type RootElement = <T extends Record<string, unknown>>(
+  props: RootProps<T>,
+) => preact.VNode;
+
 export type Config = {
   appName: string;
   lexiconDir?: string;
   databaseUrl?: string;
-  publicUrl: string;
   jetstreamUrl?: string;
   collections: string[];
   oauthScope?: string;
-  port?: number;
   middlewares?: BffMiddleware[];
-  rootElement?: <T extends Record<string, unknown>>(
-    props: RootProps<T>,
-  ) => preact.VNode;
+  rootElement?: RootElement;
   onSignedIn?: (session: SessionResponse["data"]) => Promise<void> | void;
 
   unstable_backfillRepos?: string[];
+};
+
+export type EnvConfig = {
+  port: number;
+  publicUrl: string;
+  rootDir: string;
+};
+
+export type BffConfig = Config & EnvConfig & {
+  lexiconDir: string;
+  databaseUrl: string;
+  oauthScope: string;
+  rootElement: RootElement;
 };
 
 // Helper type to extract keys from T that are valid for ordering
@@ -62,7 +75,7 @@ export interface OrderByOption<T> {
   direction?: "asc" | "desc"; // Optional sort direction
 }
 
-type Queries = {
+type IndexService = {
   getRecords: <T extends Record<string, unknown>>(
     collection: string,
     orderBy?: OrderByOption<T>,
@@ -88,10 +101,10 @@ export type BffContext<State = Record<string, unknown>> = {
   didResolver: DidResolver;
   agent?: Agent;
   createRecord: <T>(collection: string, data: Partial<T>) => Promise<void>;
-  indexService: Queries;
+  indexService: IndexService;
   oauthClient: AtprotoOAuthClient;
   currentUser?: ActorTable;
-  cfg: Config;
+  cfg: BffConfig;
   next: () => Promise<Response>;
   render: (children: ComponentChildren) => Response;
 };
@@ -109,6 +122,10 @@ export interface JetstreamEvent<T> {
     cid: string;
   };
 }
+
+export type OauthMiddlewareOptions = {
+  LoginComponent?: FunctionComponent<{ error?: string }>;
+};
 
 export type RootProps<T = Record<string, unknown>> = {
   ctx: BffContext<T>;

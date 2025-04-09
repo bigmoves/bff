@@ -2,7 +2,6 @@ import { bff, CSS, oauth, RootProps } from "@bigmoves/bff";
 
 bff({
   appName: "AT Protocol App",
-  publicUrl: "",
   collections: [],
   rootElement: Root,
   middlewares: [

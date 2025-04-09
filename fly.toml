@@ -10,7 +10,7 @@ primary_region = 'sea'
   dockerfile = './examples/blog/Dockerfile'
 
 [env]
-  BFF_STATIC_DIR = './examples/blog/'
+  BFF_ROOT_DIR = './examples/blog/'
   BFF_PORT = '8080'
   BFF_PUBLIC_URL = 'https://bff-blog.fly.dev'
 
