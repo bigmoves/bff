@@ -23,7 +23,7 @@ bff({
       if (homeMatch) {
         const entries = ctx.indexService.getRecords<Entry>(
           "com.whtwnd.blog.entry",
-          { column: "", direction: "asc" },
+          { column: "createdAt", direction: "asc" },
         );
 
         const title = "AT Protocol Blog";
