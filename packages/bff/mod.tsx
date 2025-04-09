@@ -73,6 +73,7 @@ function configureBff(cfg: Config): BffConfig {
     rootDir: Deno.env.get("BFF_ROOT_DIR") ?? Deno.cwd(),
     publicUrl: Deno.env.get("BFF_PUBLIC_URL") ?? "",
     port: Number(Deno.env.get("BFF_PORT")) || 8080,
+    jetstreamUrl: cfg.jetstreamUrl ?? "wss://jetstream2.us-west.bsky.network",
     lexiconDir: cfg.lexiconDir ?? "__generated__",
     databaseUrl: cfg.databaseUrl ?? ":memory:",
     oauthScope: cfg.oauthScope ?? "atproto transition:generic",
