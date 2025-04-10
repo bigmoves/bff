@@ -3,7 +3,9 @@ import type { Response as SessionResponse } from "@atproto/api/dist/client/types
 import type { DidResolver } from "@atproto/identity";
 import type { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
 import type { DatabaseSync } from "node:sqlite";
-import type { ComponentChildren, FunctionComponent } from "preact";
+import type { ComponentChildren, FunctionComponent, VNode } from "preact";
+
+export type AtprotoSession = SessionResponse["data"];
 
 export type Database = DatabaseSync;
 
@@ -40,7 +42,7 @@ type RootElement = <T extends Record<string, unknown>>(
   props: RootProps<T>,
 ) => preact.VNode;
 
-export type Config = {
+export type BffOptions = {
   /** The name of the app, used for OAuth */
   appName: string;
   /**
@@ -67,8 +69,14 @@ export type Config = {
   middlewares?: BffMiddleware[];
   /** The root element of the app */
   rootElement?: RootElement;
-  /** Hook that's called when a user logs in */
-  onSignedIn?: (session: SessionResponse["data"]) => Promise<void> | void;
+  /**
+   * Hook that's called when a user logs in
+   * @returns {string | undefined} - The URL to redirect to after login
+   */
+  onSignedIn?: (
+    session: AtprotoSession,
+    ctx: BffContext,
+  ) => Promise<string | undefined> | void;
   /** List of repos to backfill from given the provided collections. Runs on application boot */
   unstable_backfillRepos?: string[];
 };
@@ -88,7 +96,7 @@ export type EnvConfig = {
   rootDir: string;
 };
 
-export type BffConfig = Config & EnvConfig & {
+export type BffConfig = BffOptions & EnvConfig & {
   lexiconDir: string;
   databaseUrl: string;
   oauthScope: string;
@@ -119,22 +127,41 @@ type IndexService = {
     json: string;
     indexedAt: string;
   }) => void;
+  updateRecord: (record: {
+    uri: string;
+    cid: string;
+    did: string;
+    collection: string;
+    json: string;
+    indexedAt: string;
+  }) => void;
   deleteRecord: (uri: string) => void;
   insertActor: (actor: { did: string; handle: string }) => void;
   getActor: (did: string) => ActorTable | undefined;
+  getActorByHandle: (handle: string) => ActorTable | undefined;
 };
 
 export type BffContext<State = Record<string, unknown>> = {
   state: State;
   didResolver: DidResolver;
   agent?: Agent;
-  createRecord: <T>(collection: string, data: Partial<T>) => Promise<void>;
+  createRecord: <T>(
+    collection: string,
+    data: Partial<T>,
+    self?: boolean,
+  ) => Promise<void>;
+  updateRecord: <T>(
+    collection: string,
+    rkey: string,
+    data: Partial<T>,
+  ) => Promise<void>;
   indexService: IndexService;
   oauthClient: AtprotoOAuthClient;
   currentUser?: ActorTable;
   cfg: BffConfig;
   next: () => Promise<Response>;
   render: (children: ComponentChildren) => Response;
+  html: (vnode: VNode) => Response;
 };
 
 export interface JetstreamEvent<T> {

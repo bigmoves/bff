@@ -16,7 +16,7 @@ import { deleteCookie, getCookies, setCookie } from "@std/http";
 import { serveDir } from "@std/http/file-server";
 import { join } from "@std/path/join";
 import { DatabaseSync } from "node:sqlite";
-import type { ComponentChildren } from "preact";
+import type { ComponentChildren, VNode } from "preact";
 import { render as renderToString } from "preact-render-to-string";
 import { Login } from "./components/Login.tsx";
 import { Jetstream } from "./jetstream.ts";
@@ -26,7 +26,7 @@ import type {
   BffConfig,
   BffContext,
   BffMiddleware,
-  Config,
+  BffOptions,
   Database,
   IndexService,
   OauthMiddlewareOptions,
@@ -34,25 +34,28 @@ import type {
   RecordTable,
   RootProps,
 } from "./types.d.ts";
+import { hydrateBlobRefs } from "./utils.ts";
 
 export type {
+  AtprotoSession,
   BffContext,
   BffMiddleware,
+  BffOptions,
   RootProps,
   WithBffMeta,
 } from "./types.d.ts";
 
 export { CSS } from "./styles.ts";
 
-export async function bff(cfg: Config) {
-  const bffConfig = configureBff(cfg);
+export async function bff(opts: BffOptions) {
+  const bffConfig = configureBff(opts);
   const db = createDb(bffConfig);
   const idxService = indexService(db);
   const oauthClient = createOauthClient(db, bffConfig);
   const handler = createBffHandler(db, oauthClient, bffConfig);
   const jetstream = createSubscription(idxService, bffConfig);
 
-  if (cfg.unstable_backfillRepos?.length) {
+  if (bffConfig.unstable_backfillRepos?.length) {
     await backfillRepos(bffConfig, idxService);
   }
 
@@ -67,7 +70,11 @@ export async function bff(cfg: Config) {
   });
 }
 
-function configureBff(cfg: Config): BffConfig {
+function configureBff(cfg: BffOptions): BffConfig {
+  if (!cfg.collections.length) {
+    throw new Error("No collections provided");
+  }
+
   return {
     ...cfg,
     rootDir: Deno.env.get("BFF_ROOT_DIR") ?? Deno.cwd(),
@@ -140,7 +147,7 @@ const indexService = (db: Database): IndexService => {
           cid: r.cid,
           did: r.did,
           indexedAt: r.indexedAt,
-          ...JSON.parse(r.json),
+          ...hydrateBlobRefs(JSON.parse(r.json)),
         } as T),
       );
     },
@@ -156,7 +163,7 @@ const indexService = (db: Database): IndexService => {
         cid: result.cid,
         did: result.did,
         indexedAt: result.indexedAt,
-        ...JSON.parse(result.json),
+        ...hydrateBlobRefs(JSON.parse(result.json)),
       } as T;
     },
     insertRecord: (record: {
@@ -178,6 +185,24 @@ const indexService = (db: Database): IndexService => {
         record.indexedAt,
       );
     },
+    updateRecord: (record: {
+      uri: string;
+      cid: string;
+      did: string;
+      collection: string;
+      json: string;
+      indexedAt: string;
+    }) => {
+      db.prepare(
+        `UPDATE "record" SET cid = ?, collection = ?, json = ?, "indexedAt" = ? WHERE uri = ?`,
+      ).run(
+        record.cid,
+        record.collection,
+        record.json,
+        record.indexedAt,
+        record.uri,
+      );
+    },
     deleteRecord: (uri: string) => {
       db.prepare(`DELETE FROM "record" WHERE uri = ?`).run(uri);
     },
@@ -194,6 +219,12 @@ const indexService = (db: Database): IndexService => {
     },
     getActor: (did: string): ActorTable | undefined => {
       const result = db.prepare(`SELECT * FROM "actor" WHERE did = ?`).get(did);
+      return result as ActorTable | undefined;
+    },
+    getActorByHandle: (handle: string): ActorTable | undefined => {
+      const result = db.prepare(`SELECT * FROM "actor" WHERE handle = ?`).get(
+        handle,
+      );
       return result as ActorTable | undefined;
     },
   };
@@ -221,10 +252,6 @@ function composeMiddlewares(
     _connInfo: Deno.ServeHandlerInfo,
     inner: (req: Request, ctx: BffContext) => Promise<Response>,
   ) => {
-    const mws = cfg.middlewares?.slice().reverse();
-
-    const handlers: (() => Response | Promise<Response>)[] = [];
-
     const didCache = new MemoryCache();
     const didResolver = new DidResolver({
       didCache,
@@ -250,36 +277,56 @@ function composeMiddlewares(
     }
 
     const createRecordFn = createRecord(agent, idxService, cfg);
+    const updateRecordFn = updateRecord(agent, idxService, cfg);
 
     const ctx: BffContext = {
       state: {},
-      next() {
-        const handler = handlers.shift()!;
-        return Promise.resolve(handler());
-      },
       oauthClient,
       indexService: idxService,
       currentUser,
       agent,
       createRecord: createRecordFn,
+      updateRecord: updateRecordFn,
       didResolver,
       render: () => new Response(),
+      html: html(),
       cfg,
+      next: async () => new Response(),
     };
 
     ctx.render = render(ctx, cfg);
 
-    if (mws) {
-      for (const mw of mws) {
-        handlers.push(() => mw(req, ctx));
-      }
-    }
+    const middlewares = cfg.middlewares || [];
 
-    handlers.push(() => inner(req, ctx));
+    const composedHandler = composeHandlers([...middlewares, inner]);
 
-    const handler = handlers.shift()!;
-    return handler();
+    return composedHandler(req, ctx);
   };
+
+  function composeHandlers(
+    handlers: Array<(req: Request, ctx: BffContext) => Promise<Response>>,
+  ) {
+    return (
+      request: Request,
+      context: BffContext,
+    ): Promise<Response> => {
+      const handlersToRun = [...handlers];
+
+      async function runNext(): Promise<Response> {
+        if (handlersToRun.length === 0) {
+          return new Response();
+        }
+
+        const currentHandler = handlersToRun.shift()!;
+        context.next = runNext;
+
+        return currentHandler(request, context);
+      }
+
+      context.next = runNext;
+      return runNext();
+    };
+  }
 }
 
 async function handler(req: Request, ctx: BffContext) {
@@ -303,7 +350,7 @@ function createSubscription(
   const jetstream = new Jetstream({
     instanceUrl: cfg.jetstreamUrl,
     wantedCollections: cfg.collections,
-    handleEvent: (event) => {
+    handleEvent: async (event) => {
       if (event.kind !== "commit") return;
       if (!event.commit) return;
 
@@ -316,6 +363,13 @@ function createSubscription(
           event.commit.operation === "update"
         )
       ) {
+        const lexicons = await getLexicons(cfg);
+
+        lexicons.assertValidRecord(
+          event.commit.collection,
+          hydrateBlobRefs(event.commit.record),
+        );
+
         indexService.insertRecord({
           uri: uri,
           cid: event.commit.cid,
@@ -408,23 +462,30 @@ function createSessionStore(db: Database): NodeSavedSessionStore {
   };
 }
 
+async function getLexicons(cfg: BffConfig) {
+  const lexiconsFile = join(
+    Deno.cwd(),
+    cfg.lexiconDir,
+    "lexicons.ts",
+  );
+  const lex = await import(lexiconsFile);
+  const schemas = lex.schemas;
+  return new Lexicons(schemas);
+}
+
 function createRecord(
   agent: Agent | undefined,
   indexService: IndexService,
   cfg: BffConfig,
 ) {
-  return async (collection: string, data: { [_ in string]: unknown }) => {
+  return async (
+    collection: string,
+    data: { [_ in string]: unknown },
+    self: boolean = false,
+  ) => {
     const did = agent?.assertDid;
-    const lexiconsFile = join(
-      Deno.cwd(),
-      cfg.lexiconDir,
-      "lexicons.ts",
-    );
-    const lex = await import(lexiconsFile);
-
-    const schemas = lex.schemas;
-    const lexicons = new Lexicons(schemas);
-    const rkey = TID.nextStr();
+    const lexicons = await getLexicons(cfg);
+    const rkey = self ? "self" : TID.nextStr();
 
     if (!did) {
       throw new Error("Agent is not authenticated");
@@ -456,14 +517,80 @@ function createRecord(
   };
 }
 
+function updateRecord(
+  agent: Agent | undefined,
+  indexService: IndexService,
+  cfg: BffConfig,
+) {
+  return async (
+    collection: string,
+    rkey: string,
+    data: { [_ in string]: unknown },
+  ) => {
+    const did = agent?.assertDid;
+    const lexiconsFile = join(
+      Deno.cwd(),
+      cfg.lexiconDir,
+      "lexicons.ts",
+    );
+    const lex = await import(lexiconsFile);
+
+    const schemas = lex.schemas;
+    const lexicons = new Lexicons(schemas);
+
+    if (!did) {
+      throw new Error("Agent is not authenticated");
+    }
+
+    const record = {
+      $type: collection,
+      ...data,
+    };
+
+    assert(lexicons.assertValidRecord(collection, record));
+
+    const response = await agent.com.atproto.repo.putRecord({
+      repo: agent.assertDid,
+      collection,
+      rkey,
+      record,
+      validate: false,
+    });
+
+    indexService.insertRecord({
+      uri: `at://${did}/${collection}/${rkey}`,
+      cid: response.data.cid.toString(),
+      did,
+      collection,
+      json: stringifyLex(record),
+      indexedAt: new Date().toISOString(),
+    });
+  };
+}
+
 function render(ctx: BffContext, cfg: BffConfig) {
   return (children: ComponentChildren) => {
     const RootElement = cfg.rootElement;
+    const str = renderToString(<RootElement ctx={ctx}>{children}</RootElement>);
     return new Response(
-      renderToString(<RootElement ctx={ctx}>{children}</RootElement>),
+      `<!DOCTYPE html>${str}`,
       {
         headers: {
-          "Content-Type": "text/html; charset=utf-8;",
+          "Content-Type": "text/html; charset=utf-8",
+        },
+      },
+    );
+  };
+}
+
+function html() {
+  return (vnode: VNode) => {
+    const str = renderToString(vnode);
+    return new Response(
+      `<!DOCTYPE html>${str}`,
+      {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
         },
       },
     );
@@ -489,9 +616,9 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
     const headers = new Headers(req.headers);
     const cookie = getCookies(req.headers);
     const { pathname, searchParams, hostname } = new URL(req.url);
+    const LoginComponent = opts?.LoginComponent ?? Login;
 
     if (pathname === "/oauth/login") {
-      const LoginComponent = opts?.LoginComponent ?? Login;
       const formData = await req.formData();
       const handle = formData.get("handle") as string;
 
@@ -500,7 +627,9 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       }
 
       try {
-        const url = await ctx.oauthClient.authorize(handle);
+        const url = await ctx.oauthClient.authorize(handle, {
+          signal: req.signal,
+        });
         return new Response(null, {
           status: 200,
           headers: {
@@ -522,6 +651,13 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
 
         const agent = new Agent(session);
 
+        ctx.agent = agent;
+        ctx.createRecord = createRecord(
+          agent,
+          ctx.indexService,
+          ctx.cfg,
+        );
+
         const sessionResponse = await agent.com.atproto.server.getSession();
 
         if (!sessionResponse) {
@@ -533,7 +669,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
           });
         }
 
-        await ctx.cfg.onSignedIn?.(sessionResponse.data);
+        const redirect = await ctx.cfg.onSignedIn?.(sessionResponse.data, ctx);
 
         ctx.indexService.insertActor({
           did: sessionResponse.data.did,
@@ -551,7 +687,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
           secure: true,
         });
 
-        headers.set("location", "/");
+        headers.set("location", redirect ?? "/");
         return new Response(null, {
           status: 303, // "See Other"
           headers,
@@ -567,8 +703,35 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       }
     }
 
+    if (pathname === "/signup") {
+      try {
+        const url = await ctx.oauthClient.authorize(
+          // TODO: add to config
+          "https://bsky.social",
+          {
+            signal: req.signal,
+          },
+        );
+        return new Response(null, {
+          status: 302,
+          headers: { "HX-Redirect": url.toString() },
+        });
+      } catch (err) {
+        console.error("oauth authorize failed:", err);
+        return new Response(
+          null,
+          {
+            status: 302,
+            headers: {
+              "HX-Redirect": "/",
+            },
+          },
+        );
+      }
+    }
+
     if (pathname === "/login") {
-      return ctx.render(<Login />);
+      return ctx.render(<LoginComponent />);
     }
 
     if (pathname === "/logout") {

@@ -7,7 +7,7 @@ type Status = WithBffMeta<StatusRecord>;
 bff({
   appName: "Statusphere",
   collections: ["xyz.statusphere.status"],
-  unstable_backfillRepos: ["did:plc:bcgltzqazw5tb6k2g3ttenbj"],
+  // unstable_backfillRepos: ["did://..."],
   rootElement: Root,
   middlewares: [
     oauth({

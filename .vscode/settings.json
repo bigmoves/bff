@@ -24,7 +24,6 @@
   "[json]": {
     "editor.defaultFormatter": "denoland.vscode-deno"
   },
-  "css.customData": [".vscode/tailwind.json"],
   "editor.codeActionsOnSave": {
     "source.organizeImports": "explicit"
   }

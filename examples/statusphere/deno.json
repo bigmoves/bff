@@ -9,7 +9,7 @@
     "typed-htmx": "npm:typed-htmx@^0.3.1"
   },
   "tasks": {
-    "start": "deno run -A --watch main.tsx",
+    "dev": "deno run -A --watch main.tsx",
     "gen-server": "lex gen-server --yes ./__generated__ ./lexicons/xyz/statusphere/*",
     "codegen": {
       "command": "deno run --unstable-sloppy-imports --allow-read --allow-write ./bin/unslopify.ts ./__generated__",

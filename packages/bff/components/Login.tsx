@@ -2,7 +2,9 @@ type Props = Readonly<{
   error?: string;
 }>;
 
-export function Login({ error }: Props) {
+export function Login(
+  { error, ...rest }: Props,
+) {
   return (
     <form
       id="login-form"
@@ -10,6 +12,7 @@ export function Login({ error }: Props) {
       hx-target="#login-form"
       hx-swap="outerHTML"
       class="tw:w-full tw:sm:max-w-[300px] tw:space-y-2"
+      {...rest}
     >
       <div>
         <label htmlFor="handle" class="tw:sr-only">

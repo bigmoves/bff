@@ -3,6 +3,7 @@
     "@atproto/lexicon": "npm:@atproto/lexicon@^0.4.10",
     "@atproto/xrpc-server": "npm:@atproto/xrpc-server@^0.7.15",
     "@atproto/lex-cli": "npm:@atproto/lex-cli@^0.7.2",
+    "@std/cache": "jsr:@std/cache@^0.2.0",
     "@std/fs": "jsr:@std/fs@^1.0.15",
     "@tailwindcss/cli": "npm:@tailwindcss/cli@^4.0.12",
     "multiformats": "npm:multiformats@^13.3.2",
@@ -14,7 +15,7 @@
     "dev": "deno run \"dev:*\"",
     "dev:server": "deno run -A --watch ./main.tsx",
     "dev:tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./input.css -o ./static/styles.css --watch",
-    "gen-server": "lex gen-server --yes ./__generated__ ./lexicons/*",
+    "gen-server": "lex gen-server --yes ./__generated__ ./lexicons/**/*",
     "codegen": {
       "command": "deno run --unstable-sloppy-imports --allow-read --allow-write ./bin/unslopify.ts ./__generated__",
       "dependencies": ["gen-server"]
