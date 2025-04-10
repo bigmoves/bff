@@ -406,7 +406,7 @@ function Nav({ profile }: { profile?: ProfileView }) {
                 <img
                   src={profile.avatar}
                   alt={profile.handle}
-                  className="rounded-full h-8 w-8"
+                  className="rounded-full h-8 w-8 object-cover"
                 />
               </a>
             </div>

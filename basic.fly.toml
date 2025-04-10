@@ -14,6 +14,7 @@ primary_region = 'sea'
   BFF_PUBLIC_URL = 'https://bffbasic.fly.dev'
   BFF_ROOT_DIR = './examples/basic/'
   BFF_LEXICON_DIR = './examples/basic/__generated__'
+  BFF_DATABASE_URL = '/mnt/sqlite/production.sqlite'
 
 [http_service]
   internal_port = 8080
@@ -27,3 +28,7 @@ primary_region = 'sea'
   memory = '512mb'
   cpu_kind = 'shared'
   cpus = 1
+
+[mounts]
+  source="sqlite"
+  destination="/mnt/sqlite"
