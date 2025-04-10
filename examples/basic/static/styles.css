@@ -35,7 +35,6 @@
     --font-weight-semibold: 600;
     --font-weight-bold: 700;
     --radius-lg: 0.5rem;
-    --animate-pulse: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
     --default-font-family: var(--font-sans);
     --default-mono-font-family: var(--font-mono);
   }
@@ -240,9 +239,6 @@
   .inline {
     display: inline;
   }
-  .inline-block {
-    display: inline-block;
-  }
   .size-16 {
     width: calc(var(--spacing) * 16);
     height: calc(var(--spacing) * 16);
@@ -300,9 +296,6 @@
   }
   .max-w-5xl {
     max-width: var(--container-5xl);
-  }
-  .animate-pulse {
-    animation: var(--animate-pulse);
   }
   .cursor-pointer {
     cursor: pointer;
@@ -590,11 +583,6 @@
 @property --tw-font-weight {
   syntax: "*";
   inherits: false;
-}
-@keyframes pulse {
-  50% {
-    opacity: 0.5;
-  }
 }
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {

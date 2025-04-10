@@ -1,4 +1,4 @@
-import { BlobRef } from "@atproto/lexicon";
+import { BlobRef, stringifyLex } from "@atproto/lexicon";
 import {
   AtprotoSession,
   bff,
@@ -28,9 +28,7 @@ const blobCache = new TtlCache<string, BlobRef>(1000 * 60 * 60);
 bff({
   appName: "AT Protocol App",
   collections: ["dev.fly.bffbasic.profile"],
-  databaseUrl: "../../basic.db",
   rootElement: Root,
-  unstable_backfillRepos: ["did:plc:bcgltzqazw5tb6k2g3ttenbj"],
   onSignedIn,
   middlewares: [
     profileResolver(),
@@ -232,11 +230,29 @@ async function onSignedIn(
   let bskyProfileRecord: BskyProfileRecord | undefined;
 
   try {
-    bffBasicProfileRecord = await ctx.agent?.com.atproto.repo.getRecord({
-      repo: session.did,
+    const existingProfileResponse = await ctx.agent?.com.atproto.repo.getRecord(
+      {
+        repo: session.did,
+        collection: "dev.fly.bffbasic.profile",
+        rkey: "self",
+      },
+    );
+
+    if (!existingProfileResponse?.data || !existingProfileResponse?.data?.cid) {
+      return;
+    }
+
+    bffBasicProfileRecord = existingProfileResponse.data.value as ProfileRecord;
+
+    // We have to index the profile record here becuase the appview might not know about it yet
+    ctx.indexService.insertRecord({
+      uri: `at://${session.did}/dev.fly.bffbasic.profile/self`,
+      cid: existingProfileResponse.data.cid,
+      did: session.did,
       collection: "dev.fly.bffbasic.profile",
-      rkey: "self",
-    }).then((res) => res.data.value as ProfileRecord);
+      json: stringifyLex(bffBasicProfileRecord),
+      indexedAt: new Date().toISOString(),
+    });
   } catch (error) {
     console.error("Error fetching BFF Basic Profile:", error);
   }

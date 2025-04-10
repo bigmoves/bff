@@ -1,6 +1,6 @@
 import { Agent } from "@atproto/api";
 import { TID } from "@atproto/common";
-import { DidResolver, MemoryCache } from "@atproto/identity";
+import { type AtprotoData, DidResolver, MemoryCache } from "@atproto/identity";
 import { Lexicons, stringifyLex } from "@atproto/lexicon";
 import { OAuthResolverError } from "@atproto/oauth-client";
 import { isValidHandle } from "@atproto/syntax";
@@ -80,9 +80,10 @@ function configureBff(cfg: BffOptions): BffConfig {
     rootDir: Deno.env.get("BFF_ROOT_DIR") ?? Deno.cwd(),
     publicUrl: Deno.env.get("BFF_PUBLIC_URL") ?? "",
     port: Number(Deno.env.get("BFF_PORT")) || 8080,
+    databaseUrl: Deno.env.get("BFF_DATABASE_URL") ??
+      ":memory:",
+    lexiconDir: Deno.env.get("BFF_LEXICON_DIR") ?? "__generated__",
     jetstreamUrl: cfg.jetstreamUrl ?? "wss://jetstream2.us-west.bsky.network",
-    lexiconDir: cfg.lexiconDir ?? "__generated__",
-    databaseUrl: cfg.databaseUrl ?? ":memory:",
     oauthScope: cfg.oauthScope ?? "atproto transition:generic",
     middlewares: cfg.middlewares ?? [],
     rootElement: cfg.rootElement ?? Root,
@@ -771,11 +772,11 @@ async function backfillRepos(
     didCache: new MemoryCache(),
   });
 
-  const pdsMap = new Map<string, string>();
+  const atpMap = new Map<string, AtprotoData>();
   for (const repo of cfg.unstable_backfillRepos) {
     const atpData = await didResolver.resolveAtprotoData(repo);
-    if (!pdsMap.has(atpData.did)) {
-      pdsMap.set(atpData.did, atpData.pds);
+    if (!atpMap.has(atpData.did)) {
+      atpMap.set(atpData.did, atpData);
     }
   }
 
@@ -785,7 +786,14 @@ async function backfillRepos(
       // deno-lint-ignore no-explicit-any
       let allRecords: any[] = [];
 
-      const agent = new Agent(new URL(pdsMap.get(repo)!));
+      const atpData = atpMap.get(repo);
+
+      if (!atpData) {
+        console.error(`No Atproto data found for repo: ${repo}`);
+        continue;
+      }
+
+      const agent = new Agent(new URL(atpData.pds!));
 
       do {
         const response = await agent.com.atproto.repo.listRecords({
@@ -799,6 +807,11 @@ async function backfillRepos(
       } while (cursor);
 
       for (const record of allRecords) {
+        indexService.insertActor({
+          did: repo,
+          handle: atpData.handle,
+        });
+
         indexService.insertRecord({
           uri: record.uri,
           cid: record.cid.toString(),

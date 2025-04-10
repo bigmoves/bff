@@ -1,18 +1,19 @@
-# fly.toml app configuration file generated for bff-blog on 2025-04-08T12:35:37-07:00
+# fly.toml app configuration file generated for bffbasic on 2025-04-10T12:14:30-07:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'bff-blog'
+app = 'bffbasic'
 primary_region = 'sea'
 
 [build]
-  dockerfile = './examples/blog/Dockerfile'
+  dockerfile = './examples/basic/Dockerfile'
 
 [env]
-  BFF_ROOT_DIR = './examples/blog/'
   BFF_PORT = '8080'
-  BFF_PUBLIC_URL = 'https://bff-blog.fly.dev'
+  BFF_PUBLIC_URL = 'https://bffbasic.fly.dev'
+  BFF_ROOT_DIR = './examples/basic/'
+  BFF_LEXICON_DIR = './examples/basic/__generated__'
 
 [http_service]
   internal_port = 8080
