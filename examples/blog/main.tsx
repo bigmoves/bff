@@ -1,7 +1,7 @@
+import { Record as EntryRecord } from "$lexicon/types/com/whtwnd/blog/entry.ts";
 import { AtUri } from "@atproto/syntax";
-import { bff, RootProps, WithBffMeta } from "@bigmoves/bff";
+import { bff, RootProps, route, WithBffMeta } from "@bigmoves/bff";
 import { CSS, render } from "@deno/gfm";
-import { Record as EntryRecord } from "./__generated__/types/com/whtwnd/blog/entry.ts";
 
 type Entry = WithBffMeta<EntryRecord>;
 
@@ -13,92 +13,81 @@ bff({
   unstable_backfillRepos: [REPO],
   rootElement: Root,
   middlewares: [
-    async (req, ctx) => {
-      const HOME = new URLPattern({ pathname: "/" });
-      const POST = new URLPattern({ pathname: "/posts/:rkey" });
+    route("/", (_req, _params, ctx) => {
+      const entries = ctx.indexService.getRecords<Entry>(
+        "com.whtwnd.blog.entry",
+        { column: "createdAt", direction: "asc" },
+      );
 
-      const homeMatch = HOME.exec(req.url);
-      const postMatch = POST.exec(req.url);
+      const title = "AT Protocol Blog";
+      ctx.state.meta = {
+        title: title,
+        "og:title": title,
+        "twitter:title": title,
+      };
 
-      if (homeMatch) {
-        const entries = ctx.indexService.getRecords<Entry>(
-          "com.whtwnd.blog.entry",
-          { column: "createdAt", direction: "asc" },
-        );
+      return ctx.render(
+        <main>
+          <h1>Blog</h1>
+          {entries.map((entry) => {
+            return (
+              <ul key={entry.uri}>
+                <li>
+                  <a
+                    href={`/posts/${new AtUri(entry.uri).rkey}`}
+                    hx-boost="true"
+                  >
+                    {entry.title}
+                  </a>
+                </li>
+              </ul>
+            );
+          })}
+        </main>,
+      );
+    }),
+    route("/posts/:rkey", async (_req, params, ctx) => {
+      const entry = ctx.indexService.getRecord<Entry>(
+        `at://${REPO}/com.whtwnd.blog.entry/${params.rkey}`,
+      );
 
-        const title = "AT Protocol Blog";
-        ctx.state.meta = {
-          title: title,
-          "og:title": title,
-          "twitter:title": title,
-        };
-
-        return ctx.render(
-          <main>
-            <h1>Blog</h1>
-            {entries.map((entry) => {
-              return (
-                <ul key={entry.uri}>
-                  <li>
-                    <a
-                      href={`/posts/${new AtUri(entry.uri).rkey}`}
-                      hx-boost="true"
-                    >
-                      {entry.title}
-                    </a>
-                  </li>
-                </ul>
-              );
-            })}
-          </main>,
-        );
+      if (!entry) {
+        return ctx.next();
       }
 
-      if (postMatch) {
-        const entry = ctx.indexService.getRecord<Entry>(
-          `at://${REPO}/com.whtwnd.blog.entry/${postMatch.pathname.groups.rkey}`,
-        );
+      const atpData = await ctx.didResolver.resolveAtprotoData(entry.did);
 
-        if (!entry) {
-          return ctx.next();
-        }
+      const html = render(entry.content);
 
-        const atpData = await ctx.didResolver.resolveAtprotoData(entry.did);
+      ctx.state.meta = {
+        title: entry.title,
+        "og:title": entry.title,
+        "twitter:title": entry.title,
+      };
 
-        const html = render(entry.content);
-
-        ctx.state.meta = {
-          title: entry.title,
-          "og:title": entry.title,
-          "twitter:title": entry.title,
-        };
-
-        return ctx.render(
-          <main>
-            <br />
-            <a href="/" hx-boost="true">
-              Back
-            </a>
-            <h1>{entry.title}</h1>
-            {atpData
-              ? (
-                <p>
-                  <span class="text-lg font-bold">@{atpData.handle}</span>,
-                  {entry.createdAt
-                    ? <span class="ml-2">{formatDate(entry.createdAt)}</span>
-                    : null}
-                </p>
-              )
-              : null}
-            <div
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
-          </main>,
-        );
-      }
-
-      return ctx.next();
-    },
+      return ctx.render(
+        <main>
+          <br />
+          <a href="/" hx-boost="true">
+            Back
+          </a>
+          <h1>{entry.title}</h1>
+          {atpData
+            ? (
+              <p>
+                <span class="text-lg font-bold">@{atpData.handle}</span>,
+                {entry.createdAt
+                  ? <span class="ml-2">{formatDate(entry.createdAt)}</span>
+                  : null}
+              </p>
+            )
+            : null}
+          <div
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </main>,
+      );
+    }),
   ],
 });
 

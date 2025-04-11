@@ -1,6 +1,13 @@
-import { bff, oauth, RootProps, WithBffMeta } from "@bigmoves/bff";
-import { Record as StatusRecord } from "./__generated__/types/xyz/statusphere/status.ts";
-import { Un$Typed } from "./__generated__/util.ts";
+import { Record as StatusRecord } from "$lexicon/types/xyz/statusphere/status.ts";
+import { Un$Typed } from "$lexicon/util.ts";
+import {
+  bff,
+  oauth,
+  OAUTH_ROUTES,
+  RootProps,
+  route,
+  WithBffMeta,
+} from "@bigmoves/bff";
 
 type Status = WithBffMeta<StatusRecord>;
 
@@ -13,72 +20,65 @@ bff({
     oauth({
       LoginComponent: Login,
     }),
-    async (req, ctx) => {
-      const { pathname } = new URL(req.url);
+    route("/", async (_req, _params, ctx) => {
+      let profile = undefined;
+      const currentUser = ctx.currentUser;
+      const statuses = ctx.indexService.getRecords<Status>(
+        "xyz.statusphere.status",
+      );
 
-      if (pathname === "/") {
-        let profile = undefined;
-        const currentUser = ctx.currentUser;
-        const statuses = ctx.indexService.getRecords<Status>(
-          "xyz.statusphere.status",
-        );
-
-        if (currentUser?.did) {
-          const response = await ctx.agent?.getProfile({
-            actor: currentUser.did,
-          });
-          profile = { displayName: response?.data?.displayName };
-        }
-
-        const didHandleMap: Record<string, string> = {};
-        for (const status of statuses) {
-          if (status.did) {
-            const atpData = await ctx.didResolver.resolveAtprotoData(
-              status.did,
-            );
-            if (!atpData) {
-              console.error(`Failed to resolve handle for DID: ${status.did}`);
-              continue;
-            }
-            didHandleMap[status.did] = atpData.handle;
-          }
-        }
-
-        return ctx.render(
-          <Home
-            statuses={statuses}
-            didHandleMap={didHandleMap}
-            profile={profile}
-          />,
-        );
-      }
-
-      if (pathname === "/status") {
-        const formData = await req.formData();
-        const status = formData.get("status") as string;
-
-        await ctx.createRecord<Un$Typed<StatusRecord>>(
-          "xyz.statusphere.status",
-          {
-            status,
-            createdAt: new Date().toISOString(),
-          },
-        );
-
-        return new Response(null, {
-          status: 303,
-          headers: {
-            Location: "/",
-          },
+      if (currentUser?.did) {
+        const response = await ctx.agent?.getProfile({
+          actor: currentUser.did,
         });
+        profile = { displayName: response?.data?.displayName };
       }
 
-      if (pathname === "/login") {
-        return ctx.render(<Login />);
+      const didHandleMap: Record<string, string> = {};
+      for (const status of statuses) {
+        if (status.did) {
+          const atpData = await ctx.didResolver.resolveAtprotoData(
+            status.did,
+          );
+          if (!atpData) {
+            console.error(`Failed to resolve handle for DID: ${status.did}`);
+            continue;
+          }
+          didHandleMap[status.did] = atpData.handle;
+        }
       }
 
-      return ctx.next();
-    },
+      return ctx.render(
+        <Home
+          statuses={statuses}
+          didHandleMap={didHandleMap}
+          profile={profile}
+        />,
+      );
+    }),
+    route("/status", ["POST"], async (req, _params, ctx) => {
+      const formData = await req.formData();
+      const status = formData.get("status") as string;
+
+      if (!ctx.currentUser) {
+        return new Response("Not authorized", { status: 401 });
+      }
+
+      await ctx.createRecord<Un$Typed<StatusRecord>>(
+        "xyz.statusphere.status",
+        {
+          status,
+          createdAt: new Date().toISOString(),
+        },
+      );
+
+      return new Response(null, {
+        status: 303,
+        headers: {
+          "HX-Redirect": "/",
+        },
+      });
+    }),
   ],
 });
 
@@ -105,7 +105,7 @@ function Login({ error }: Readonly<{ error?: string }>) {
       </div>
       <div class="container">
         <form
-          hx-post="/oauth/login"
+          hx-post={OAUTH_ROUTES.login}
           hx-target="#root"
           hx-swap="outerHTML"
           class="login-form"
@@ -134,14 +134,12 @@ function Login({ error }: Readonly<{ error?: string }>) {
   );
 }
 
-type Props = Readonly<{
+function Home({ statuses, didHandleMap, profile, myStatus }: Readonly<{
   statuses: Status[];
   didHandleMap: Record<string, string>;
   profile?: { displayName?: string };
   myStatus?: Status;
-}>;
-
-function Home({ statuses, didHandleMap, profile, myStatus }: Props) {
+}>) {
   return (
     <div id="root">
       <div class="error"></div>
@@ -153,7 +151,11 @@ function Home({ statuses, didHandleMap, profile, myStatus }: Props) {
         <div class="card">
           {profile
             ? (
-              <form hx-post="/logout" hx-swap="none" class="session-form">
+              <form
+                hx-post={OAUTH_ROUTES.logout}
+                hx-swap="none"
+                class="session-form"
+              >
                 <div>
                   Hi,{" "}
                   <strong>{profile.displayName || "friend"}</strong>. What's
@@ -167,13 +169,17 @@ function Home({ statuses, didHandleMap, profile, myStatus }: Props) {
             : (
               <div class="session-form">
                 <div>
-                  <a href="/login" hx-boost="true">
+                  <a href={OAUTH_ROUTES.loginPage} hx-boost="true">
                     Log in
                   </a>{" "}
                   to set your status!
                 </div>
                 <div>
-                  <a href="/login" hx-boost="true" class="button">
+                  <a
+                    href={OAUTH_ROUTES.loginPage}
+                    hx-boost="true"
+                    class="button"
+                  >
                     Log in
                   </a>
                 </div>

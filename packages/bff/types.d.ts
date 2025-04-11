@@ -184,3 +184,18 @@ export type RootProps<T = Record<string, unknown>> = {
   ctx: BffContext<T>;
   children: ComponentChildren;
 };
+
+export type HttpMethod =
+  | "GET"
+  | "POST"
+  | "PUT"
+  | "DELETE"
+  | "PATCH"
+  | "HEAD"
+  | "OPTIONS";
+
+export type RouteHandler = (
+  req: Request,
+  params: Record<string, string>,
+  ctx: BffContext,
+) => Promise<Response> | Response;

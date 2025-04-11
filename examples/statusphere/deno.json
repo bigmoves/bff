@@ -1,5 +1,6 @@
 {
   "imports": {
+    "$lexicon/": "./__generated__/",
     "@atproto/lexicon": "npm:@atproto/lexicon@^0.4.10",
     "@atproto/xrpc-server": "npm:@atproto/xrpc-server@^0.7.15",
     "@atproto/lex-cli": "npm:@atproto/lex-cli@^0.7.2",

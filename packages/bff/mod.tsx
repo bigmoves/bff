@@ -28,11 +28,13 @@ import type {
   BffMiddleware,
   BffOptions,
   Database,
+  HttpMethod,
   IndexService,
   OauthMiddlewareOptions,
   OrderByOption,
   RecordTable,
   RootProps,
+  RouteHandler,
 } from "./types.d.ts";
 import { hydrateBlobRefs } from "./utils.ts";
 
@@ -42,6 +44,7 @@ export type {
   BffMiddleware,
   BffOptions,
   RootProps,
+  RouteHandler,
   WithBffMeta,
 } from "./types.d.ts";
 
@@ -612,6 +615,15 @@ function Root(props: RootProps) {
   );
 }
 
+export const OAUTH_ROUTES = {
+  loginPage: "/login",
+  login: "/oauth/login",
+  callback: "/oauth/callback",
+  signup: "/signup",
+  logout: "/logout",
+  clientMetadata: "/client-metadata.json",
+};
+
 export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
   return async (req, ctx) => {
     const headers = new Headers(req.headers);
@@ -619,7 +631,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
     const { pathname, searchParams, hostname } = new URL(req.url);
     const LoginComponent = opts?.LoginComponent ?? Login;
 
-    if (pathname === "/oauth/login") {
+    if (pathname === OAUTH_ROUTES.login) {
       const formData = await req.formData();
       const handle = formData.get("handle") as string;
 
@@ -646,7 +658,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       }
     }
 
-    if (pathname === "/oauth/callback") {
+    if (pathname === OAUTH_ROUTES.callback) {
       try {
         const { session } = await ctx.oauthClient.callback(searchParams);
 
@@ -704,7 +716,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       }
     }
 
-    if (pathname === "/signup") {
+    if (pathname === OAUTH_ROUTES.signup) {
       try {
         const url = await ctx.oauthClient.authorize(
           // TODO: add to config
@@ -731,11 +743,11 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       }
     }
 
-    if (pathname === "/login") {
+    if (pathname === OAUTH_ROUTES.loginPage) {
       return ctx.render(<LoginComponent />);
     }
 
-    if (pathname === "/logout") {
+    if (pathname === OAUTH_ROUTES.logout) {
       if (cookie.auth) {
         ctx.oauthClient.revoke(cookie.auth);
       }
@@ -750,7 +762,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       });
     }
 
-    if (pathname === "/client-metadata.json") {
+    if (pathname === OAUTH_ROUTES.clientMetadata) {
       return new Response(JSON.stringify(ctx.oauthClient.clientMetadata), {
         headers: { "Content-Type": "application/json" },
       });
@@ -823,4 +835,46 @@ async function backfillRepos(
       }
     }
   }
+}
+
+export function route(
+  path: string,
+  methodOrHandler?: HttpMethod | HttpMethod[] | RouteHandler,
+  handler?: RouteHandler,
+): BffMiddleware {
+  let routeMethod: HttpMethod | HttpMethod[] = ["GET"];
+  let routeHandler: RouteHandler;
+
+  if (typeof methodOrHandler === "function") {
+    routeHandler = methodOrHandler;
+  } else if (methodOrHandler) {
+    routeMethod = methodOrHandler;
+    if (handler) {
+      routeHandler = handler;
+    } else {
+      throw new Error("Handler function is required");
+    }
+  } else {
+    throw new Error("Handler function is required");
+  }
+
+  const pattern = new URLPattern({ pathname: path });
+
+  return async (req: Request, ctx: BffContext) => {
+    const match = pattern.exec(req.url);
+
+    if (match) {
+      const methods = Array.isArray(routeMethod) ? routeMethod : [routeMethod];
+      if (methods.includes(req.method as HttpMethod)) {
+        const params = Object.fromEntries(
+          Object.entries(match.pathname.groups || {})
+            .map(([key, value]) => [key, value ?? ""]),
+        );
+
+        return await routeHandler(req, params, ctx);
+      }
+    }
+
+    return await ctx.next();
+  };
 }
