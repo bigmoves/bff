@@ -17,10 +17,10 @@ bff({
   appName: "AT Protocol App",
   collections: ["dev.fly.bffbasic.profile"],
   rootElement: Root,
-  onSignedIn,
   middlewares: [
     profileStateResolver,
     oauth({
+      onSignedIn,
       LoginComponent: ({ error }) => (
         <div id="login" class="flex justify-center items-center w-full h-full">
           <Login hx-target="#login" error={error} />

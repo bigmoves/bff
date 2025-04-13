@@ -39,11 +39,6 @@ type RootElement = <T extends Record<string, unknown>>(
   props: RootProps<T>,
 ) => preact.VNode;
 
-export type onSignedInArgs = {
-  actor: ActorTable;
-  ctx: BffContext;
-};
-
 export type BffOptions = {
   /** The name of the app, used for OAuth */
   appName: string;
@@ -61,11 +56,6 @@ export type BffOptions = {
   middlewares?: BffMiddleware[];
   /** The root element of the app */
   rootElement?: RootElement;
-  /**
-   * Hook that's called when a user logs in
-   * @returns {string | undefined} - The URL to redirect to after login
-   */
-  onSignedIn?: (params: onSignedInArgs) => Promise<string | undefined> | void;
   /** List of repos to backfill from given the provided collections. Runs on application boot */
   unstable_backfillRepos?: string[];
 };
@@ -166,8 +156,18 @@ export interface JetstreamEvent<T> {
   };
 }
 
+export type onSignedInArgs = {
+  actor: ActorTable;
+  ctx: BffContext;
+};
+
 export type OauthMiddlewareOptions = {
   LoginComponent?: FunctionComponent<{ error?: string }>;
+  /**
+   * Hook that's called when a user logs in
+   * @returns {string | undefined} The URL to redirect to after login
+   */
+  onSignedIn?: (params: onSignedInArgs) => Promise<string | undefined> | void;
 };
 
 export type RootProps<T = Record<string, unknown>> = {

@@ -715,7 +715,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
 
         ctx.indexService.insertActor(actor);
 
-        const redirectPath = await ctx.cfg.onSignedIn?.({ actor, ctx });
+        const redirectPath = await opts?.onSignedIn?.({ actor, ctx });
 
         const headers = new Headers();
         setCookie(headers, {

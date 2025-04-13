@@ -17,15 +17,17 @@ bff({
   appName: "Tangled ASCII",
   collections: ["sh.tangled.repo", "sh.tangled.feed.star"],
   rootElement: Root,
-  onSignedIn: async ({ actor, ctx }) => {
-    await ctx.backfillRepos([actor.did], [
-      "sh.tangled.feed.star",
-    ]);
-    return "/";
-  },
   unstable_backfillRepos: ["did:plc:hwevmowznbiukdf6uk5dwrrq"],
   middlewares: [
-    oauth({ LoginComponent: LoginModal }),
+    oauth({
+      onSignedIn: async ({ actor, ctx }) => {
+        await ctx.backfillRepos([actor.did], [
+          "sh.tangled.feed.star",
+        ]);
+        return "/";
+      },
+      LoginComponent: LoginModal,
+    }),
     route("/modals/login", (_req, _params, ctx) => {
       return ctx.html(
         <LoginModal />,
