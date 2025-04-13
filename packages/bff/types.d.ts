@@ -1,11 +1,8 @@
 import type { Agent } from "@atproto/api";
-import type { Response as SessionResponse } from "@atproto/api/dist/client/types/com/atproto/server/getSession.ts";
 import type { DidResolver } from "@atproto/identity";
 import type { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
 import type { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, FunctionComponent, VNode } from "preact";
-
-export type AtprotoSession = SessionResponse["data"];
 
 export type Database = DatabaseSync;
 
@@ -42,6 +39,11 @@ type RootElement = <T extends Record<string, unknown>>(
   props: RootProps<T>,
 ) => preact.VNode;
 
+export type onSignedInArgs = {
+  actor: ActorTable;
+  ctx: BffContext;
+};
+
 export type BffOptions = {
   /** The name of the app, used for OAuth */
   appName: string;
@@ -63,10 +65,7 @@ export type BffOptions = {
    * Hook that's called when a user logs in
    * @returns {string | undefined} - The URL to redirect to after login
    */
-  onSignedIn?: (
-    session: AtprotoSession,
-    ctx: BffContext,
-  ) => Promise<string | undefined> | void;
+  onSignedIn?: (params: onSignedInArgs) => Promise<string | undefined> | void;
   /** List of repos to backfill from given the provided collections. Runs on application boot */
   unstable_backfillRepos?: string[];
 };
@@ -101,40 +100,26 @@ export type BffConfig = BffOptions & EnvConfig & {
   rootElement: RootElement;
 };
 
-// Helper type to extract keys from T that are valid for ordering
-type OrderableKeys<T> = Extract<keyof T, string>;
+export type QueryOptions = {
+  orderBy?: {
+    field: string;
+    direction?: "asc" | "desc";
+  };
+  where?: Array<{ field: string; value: string }>;
+};
 
-export interface OrderByOption<T> {
-  column: OrderableKeys<T>; // The JSON property to order by
-  direction?: "asc" | "desc"; // Optional sort direction
-}
-
-type IndexService = {
+export type IndexService = {
   getRecords: <T extends Record<string, unknown>>(
     collection: string,
-    orderBy?: OrderByOption<T>,
+    opts?: QueryOptions,
   ) => T[];
   getRecord: <T extends Record<string, unknown>>(
     uri: string,
   ) => T | undefined;
-  insertRecord: (record: {
-    uri: string;
-    cid: string;
-    did: string;
-    collection: string;
-    json: string;
-    indexedAt: string;
-  }) => void;
-  updateRecord: (record: {
-    uri: string;
-    cid: string;
-    did: string;
-    collection: string;
-    json: string;
-    indexedAt: string;
-  }) => void;
+  insertRecord: (record: RecordTable) => void;
+  updateRecord: (record: RecordTable) => void;
   deleteRecord: (uri: string) => void;
-  insertActor: (actor: { did: string; handle: string }) => void;
+  insertActor: (actor: ActorTable) => void;
   getActor: (did: string) => ActorTable | undefined;
   getActorByHandle: (handle: string) => ActorTable | undefined;
 };
@@ -152,6 +137,11 @@ export type BffContext<State = Record<string, unknown>> = {
     collection: string,
     rkey: string,
     data: Partial<T>,
+  ) => Promise<void>;
+  deleteRecord: (collection: string, rkey: string) => Promise<void>;
+  backfillRepos: (
+    repos: string[],
+    collections?: string[],
   ) => Promise<void>;
   indexService: IndexService;
   oauthClient: AtprotoOAuthClient;

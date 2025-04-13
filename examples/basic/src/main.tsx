@@ -23,7 +23,7 @@ bff({
     oauth({
       LoginComponent: ({ error }) => (
         <div id="login" class="flex justify-center items-center w-full h-full">
-          <Login hx-target="body" error={error} />
+          <Login hx-target="#login" error={error} />
         </div>
       ),
     }),

@@ -27,8 +27,8 @@ export class Jetstream<T> {
 
   constructUrl() {
     const params = new URLSearchParams();
-    if (this.wantedCollections.length > 0) {
-      params.append("wantedCollections", this.wantedCollections.join(","));
+    for (const col of this.wantedCollections) {
+      params.append("wantedCollections", col);
     }
     return `${this.#instanceUrl}/subscribe?${params.toString()}`;
   }

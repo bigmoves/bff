@@ -16,7 +16,7 @@ bff({
     route("/", (_req, _params, ctx) => {
       const entries = ctx.indexService.getRecords<Entry>(
         "com.whtwnd.blog.entry",
-        { column: "createdAt", direction: "asc" },
+        { orderBy: { field: "createdAt", direction: "asc" } },
       );
 
       const title = "AT Protocol Blog";

@@ -31,7 +31,7 @@ import type {
   HttpMethod,
   IndexService,
   OauthMiddlewareOptions,
-  OrderByOption,
+  QueryOptions,
   RecordTable,
   RootProps,
   RouteHandler,
@@ -39,10 +39,12 @@ import type {
 import { hydrateBlobRefs } from "./utils.ts";
 
 export type {
-  AtprotoSession,
+  ActorTable,
   BffContext,
   BffMiddleware,
   BffOptions,
+  onSignedInArgs,
+  RecordTable,
   RootProps,
   RouteHandler,
   WithBffMeta,
@@ -58,9 +60,10 @@ export async function bff(opts: BffOptions) {
   const handler = createBffHandler(db, oauthClient, bffConfig);
   const jetstream = createSubscription(idxService, bffConfig);
 
-  if (bffConfig.unstable_backfillRepos?.length) {
-    await backfillRepos(bffConfig, idxService);
-  }
+  await backfillRepos(
+    idxService,
+    bffConfig,
+  )(bffConfig.unstable_backfillRepos ?? []);
 
   jetstream.connect();
 
@@ -130,17 +133,34 @@ const indexService = (db: Database): IndexService => {
   return {
     getRecords: <T extends Record<string, unknown>>(
       collection: string,
-      orderBy?: OrderByOption<T>,
-    ): T[] => {
+      options?: QueryOptions,
+    ) => {
       let query = `SELECT * FROM "record" WHERE collection = ?`;
       const params: string[] = [collection];
 
-      if (orderBy) {
-        // Extract the JSON property using JSON_EXTRACT and order by it
-        // SQLite supports JSON_EXTRACT for querying JSON stored as text
-        query += ` ORDER BY JSON_EXTRACT(json, '$.${String(orderBy.column)}') ${
-          orderBy.direction || "asc"
-        }`;
+      const tableColumns = ["did", "uri"];
+
+      if (options?.where && options.where.length > 0) {
+        // Handle multiple where conditions
+        options.where.forEach((condition) => {
+          const field = condition.field;
+          if (tableColumns.includes(field)) {
+            query += ` AND ${field} = ?`;
+          } else {
+            query += ` AND JSON_EXTRACT(json, '$.${field}') = ?`;
+          }
+          params.push(condition.value);
+        });
+      }
+
+      if (options?.orderBy) {
+        const field = options.orderBy.field;
+        if (tableColumns.includes(field)) {
+          query += ` ORDER BY ${field}`;
+        } else {
+          query += ` ORDER BY JSON_EXTRACT(json, '$.${field}')`;
+        }
+        query += ` ${options.orderBy.direction || "asc"}`;
       }
 
       const rows = db.prepare(query).all(...params) as RecordTable[];
@@ -170,14 +190,7 @@ const indexService = (db: Database): IndexService => {
         ...hydrateBlobRefs(JSON.parse(result.json)),
       } as T;
     },
-    insertRecord: (record: {
-      uri: string;
-      cid: string;
-      did: string;
-      collection: string;
-      json: string;
-      indexedAt: string;
-    }) => {
+    insertRecord: (record: RecordTable) => {
       db.prepare(
         `INSERT INTO "record" (uri, cid, did, collection, json, "indexedAt") VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (uri) DO UPDATE SET cid = excluded.cid, collection = excluded.collection, json = excluded.json, "indexedAt" = excluded."indexedAt"`,
       ).run(
@@ -189,14 +202,7 @@ const indexService = (db: Database): IndexService => {
         record.indexedAt,
       );
     },
-    updateRecord: (record: {
-      uri: string;
-      cid: string;
-      did: string;
-      collection: string;
-      json: string;
-      indexedAt: string;
-    }) => {
+    updateRecord: (record: RecordTable) => {
       db.prepare(
         `UPDATE "record" SET cid = ?, collection = ?, json = ?, "indexedAt" = ? WHERE uri = ?`,
       ).run(
@@ -210,15 +216,15 @@ const indexService = (db: Database): IndexService => {
     deleteRecord: (uri: string) => {
       db.prepare(`DELETE FROM "record" WHERE uri = ?`).run(uri);
     },
-    insertActor: (actor: { did: string; handle: string }) => {
+    insertActor: (actor: ActorTable) => {
       db.prepare(
         `INSERT INTO "actor" (did, handle, "indexedAt") VALUES (?, ?, ?) ON CONFLICT (did) DO UPDATE SET handle = ?, "indexedAt" = ?`,
       ).run(
         actor.did,
         actor.handle,
-        new Date().toISOString(),
+        actor.indexedAt,
         actor.handle,
-        new Date().toISOString(),
+        actor.indexedAt,
       );
     },
     getActor: (did: string): ActorTable | undefined => {
@@ -282,6 +288,8 @@ function composeMiddlewares(
 
     const createRecordFn = createRecord(agent, idxService, cfg);
     const updateRecordFn = updateRecord(agent, idxService, cfg);
+    const deleteRecordFn = deleteRecord(agent, idxService);
+    const backfillReposFn = backfillRepos(idxService, cfg);
 
     const ctx: BffContext = {
       state: {},
@@ -291,6 +299,8 @@ function composeMiddlewares(
       agent,
       createRecord: createRecordFn,
       updateRecord: updateRecordFn,
+      deleteRecord: deleteRecordFn,
+      backfillRepos: backfillReposFn,
       didResolver,
       render: () => new Response(),
       html: html(),
@@ -357,6 +367,8 @@ function createSubscription(
     handleEvent: async (event) => {
       if (event.kind !== "commit") return;
       if (!event.commit) return;
+
+      console.log("Received event:", event);
 
       const uri =
         `at://${event.did}/${event.commit.collection}/${event.commit.rkey}`;
@@ -532,15 +544,7 @@ function updateRecord(
     data: { [_ in string]: unknown },
   ) => {
     const did = agent?.assertDid;
-    const lexiconsFile = join(
-      Deno.cwd(),
-      cfg.lexiconDir,
-      "lexicons.ts",
-    );
-    const lex = await import(lexiconsFile);
-
-    const schemas = lex.schemas;
-    const lexicons = new Lexicons(schemas);
+    const lexicons = await getLexicons(cfg);
 
     if (!did) {
       throw new Error("Agent is not authenticated");
@@ -569,6 +573,27 @@ function updateRecord(
       json: stringifyLex(record),
       indexedAt: new Date().toISOString(),
     });
+  };
+}
+
+function deleteRecord(
+  agent: Agent | undefined,
+  indexService: IndexService,
+) {
+  return async (collection: string, rkey: string) => {
+    const did = agent?.assertDid;
+
+    if (!did) {
+      throw new Error("Agent is not authenticated");
+    }
+
+    await agent.com.atproto.repo.deleteRecord({
+      repo: agent.assertDid,
+      collection,
+      rkey,
+    });
+
+    indexService.deleteRecord(`at://${did}/${collection}/${rkey}`);
   };
 }
 
@@ -636,7 +661,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       const handle = formData.get("handle") as string;
 
       if (typeof handle !== "string" || !isValidHandle(handle)) {
-        return ctx.render(<LoginComponent error="invalid handle" />);
+        return ctx.html(<LoginComponent error="invalid handle" />);
       }
 
       try {
@@ -670,24 +695,27 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
           ctx.indexService,
           ctx.cfg,
         );
+        ctx.backfillRepos = backfillRepos(
+          ctx.indexService,
+          ctx.cfg,
+        );
 
-        const sessionResponse = await agent.com.atproto.server.getSession();
-
-        if (!sessionResponse) {
-          return new Response(null, {
-            status: 303, // "See Other"
-            headers: {
-              location: "/",
-            },
-          });
+        const atpData = await ctx.didResolver.resolveAtprotoData(
+          session.did,
+        );
+        if (!atpData) {
+          throw new Error("Failed to resolve Atproto data");
         }
 
-        const redirect = await ctx.cfg.onSignedIn?.(sessionResponse.data, ctx);
+        const actor: ActorTable = {
+          did: session.did,
+          handle: atpData.handle,
+          indexedAt: new Date().toISOString(),
+        };
 
-        ctx.indexService.insertActor({
-          did: sessionResponse.data.did,
-          handle: sessionResponse.data.handle,
-        });
+        ctx.indexService.insertActor(actor);
+
+        const redirectPath = await ctx.cfg.onSignedIn?.({ actor, ctx });
 
         const headers = new Headers();
         setCookie(headers, {
@@ -700,7 +728,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
           secure: true,
         });
 
-        headers.set("location", redirect ?? "/");
+        headers.set("location", redirectPath ?? "/");
         return new Response(null, {
           status: 303, // "See Other"
           headers,
@@ -772,69 +800,72 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
   };
 }
 
-async function backfillRepos(
-  cfg: BffConfig,
+function backfillRepos(
   indexService: IndexService,
+  cfg: BffConfig,
 ) {
-  if (!cfg.unstable_backfillRepos) return;
+  return async (repos: string[], collections?: string[]) => {
+    if (!repos.length) return;
 
-  const collections = cfg.collections;
+    const collectionsToSync = collections ?? cfg.collections;
 
-  const didResolver = new DidResolver({
-    didCache: new MemoryCache(),
-  });
+    const didResolver = new DidResolver({
+      didCache: new MemoryCache(),
+    });
 
-  const atpMap = new Map<string, AtprotoData>();
-  for (const repo of cfg.unstable_backfillRepos) {
-    const atpData = await didResolver.resolveAtprotoData(repo);
-    if (!atpMap.has(atpData.did)) {
-      atpMap.set(atpData.did, atpData);
-    }
-  }
-
-  for (const repo of cfg.unstable_backfillRepos) {
-    for (const collection of collections) {
-      let cursor: string | undefined = undefined;
-      // deno-lint-ignore no-explicit-any
-      let allRecords: any[] = [];
-
-      const atpData = atpMap.get(repo);
-
-      if (!atpData) {
-        console.error(`No Atproto data found for repo: ${repo}`);
-        continue;
-      }
-
-      const agent = new Agent(new URL(atpData.pds!));
-
-      do {
-        const response = await agent.com.atproto.repo.listRecords({
-          repo,
-          collection,
-          cursor,
-          limit: 100, // Adjust the batch size
-        });
-        allRecords = [...allRecords, ...response.data.records];
-        cursor = response.data.cursor ?? undefined; // Continue fetching if there's more data
-      } while (cursor);
-
-      for (const record of allRecords) {
-        indexService.insertActor({
-          did: repo,
-          handle: atpData.handle,
-        });
-
-        indexService.insertRecord({
-          uri: record.uri,
-          cid: record.cid.toString(),
-          did: repo,
-          collection,
-          json: stringifyLex(record.value),
-          indexedAt: new Date().toISOString(),
-        });
+    const atpMap = new Map<string, AtprotoData>();
+    for (const repo of repos) {
+      const atpData = await didResolver.resolveAtprotoData(repo);
+      if (!atpMap.has(atpData.did)) {
+        atpMap.set(atpData.did, atpData);
       }
     }
-  }
+
+    for (const repo of repos) {
+      for (const collection of collectionsToSync) {
+        let cursor: string | undefined = undefined;
+        // deno-lint-ignore no-explicit-any
+        let allRecords: any[] = [];
+
+        const atpData = atpMap.get(repo);
+
+        if (!atpData) {
+          console.error(`No Atproto data found for repo: ${repo}`);
+          continue;
+        }
+
+        const agent = new Agent(new URL(atpData.pds!));
+
+        do {
+          const response = await agent.com.atproto.repo.listRecords({
+            repo,
+            collection,
+            cursor,
+            limit: 100,
+          });
+          allRecords = [...allRecords, ...response.data.records];
+          cursor = response.data.cursor ?? undefined; // Continue fetching if there's more data
+        } while (cursor);
+
+        for (const record of allRecords) {
+          indexService.insertActor({
+            did: repo,
+            handle: atpData.handle,
+            indexedAt: new Date().toISOString(),
+          });
+
+          indexService.insertRecord({
+            uri: record.uri,
+            cid: record.cid.toString(),
+            did: repo,
+            collection,
+            json: stringifyLex(record.value),
+            indexedAt: new Date().toISOString(),
+          });
+        }
+      }
+    }
+  };
 }
 
 export function route(

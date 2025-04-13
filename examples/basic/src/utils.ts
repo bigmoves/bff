@@ -2,52 +2,31 @@ import { Record as BskyProfileRecord } from "$lexicon/types/app/bsky/actor/profi
 import { ProfileView } from "$lexicon/types/dev/fly/bffbasic/defs.ts";
 import { Record as ProfileRecord } from "$lexicon/types/dev/fly/bffbasic/profile.ts";
 import { Un$Typed } from "$lexicon/util.ts";
-import { stringifyLex } from "@atproto/lexicon";
-import { AtprotoSession, BffContext, WithBffMeta } from "@bigmoves/bff";
+import { BffContext, onSignedInArgs, WithBffMeta } from "@bigmoves/bff";
 
-export async function onSignedIn(
-  session: AtprotoSession,
-  ctx: BffContext,
-): Promise<string | undefined> {
-  let bffBasicProfileRecord: ProfileRecord | undefined;
+export async function onSignedIn({
+  actor,
+  ctx,
+}: onSignedInArgs) {
   let bskyProfileRecord: BskyProfileRecord | undefined;
 
-  try {
-    const existingProfileResponse = await ctx.agent?.com.atproto.repo.getRecord(
-      {
-        repo: session.did,
-        collection: "dev.fly.bffbasic.profile",
-        rkey: "self",
-      },
-    );
+  await ctx.backfillRepos([actor.did]);
 
-    if (!existingProfileResponse?.data?.cid) {
-      return;
-    }
+  const [profile] = ctx.indexService.getRecords<ProfileRecord>(
+    "dev.fly.bffbasic.profile",
+    {
+      where: [{ field: "did", value: actor.did }],
+    },
+  );
 
-    bffBasicProfileRecord = existingProfileResponse.data.value as ProfileRecord;
-
-    // We have to index the profile record here becuase the appview might not know about it yet
-    ctx.indexService.insertRecord({
-      uri: `at://${session.did}/dev.fly.bffbasic.profile/self`,
-      cid: existingProfileResponse.data.cid,
-      did: session.did,
-      collection: "dev.fly.bffbasic.profile",
-      json: stringifyLex(bffBasicProfileRecord),
-      indexedAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error("Error fetching BFF Basic Profile:", error);
-  }
-
-  if (bffBasicProfileRecord) {
+  if (profile) {
     console.log("Profile already exists");
-    return `/profile/${session.handle}`;
+    return `/profile/${actor.handle}`;
   }
 
   try {
     bskyProfileRecord = await ctx.agent?.com.atproto.repo.getRecord({
-      repo: session.did,
+      repo: actor.did,
       collection: "app.bsky.actor.profile",
       rkey: "self",
     }).then((res) => res.data.value as BskyProfileRecord);

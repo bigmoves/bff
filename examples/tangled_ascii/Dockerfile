@@ -9,10 +9,10 @@ COPY ../../examples/statusphere/ /app/examples/statusphere/
 COPY ../../examples/tangled_ascii/ /app/examples/tangled_ascii/
 COPY ../../packages/bff/ /app/packages/bff/
 
-RUN deno cache ./examples/basic/src/main.tsx
+RUN deno cache ./examples/tangled_ascii/main.tsx
 
 # Prefer not to run as root.
 USER deno
 EXPOSE 8080
 
-CMD ["run", "-A", "./examples/basic/src/main.tsx"]
+CMD ["run", "-A", "./examples/tangled_ascii/main.tsx"]

@@ -39,6 +39,7 @@
     "npm:@tailwindcss/cli@^4.1.3": "4.1.3",
     "npm:@tailwindcss/typography@~0.5.16": "0.5.16_tailwindcss@4.1.3",
     "npm:@types/node@*": "22.12.0",
+    "npm:clsx@^2.1.1": "2.1.1",
     "npm:github-slugger@2": "2.0.0",
     "npm:he@^1.2.0": "1.2.0",
     "npm:jose@5.9.6": "5.9.6",
@@ -52,6 +53,7 @@
     "npm:preact@^10.26.5": "10.26.5",
     "npm:prismjs@^1.29.0": "1.30.0",
     "npm:sanitize-html@^2.13.0": "2.15.0",
+    "npm:tailwind-merge@^3.2.0": "3.2.0",
     "npm:tailwindcss@^4.0.12": "4.1.3",
     "npm:tailwindcss@^4.1.3": "4.1.3",
     "npm:typed-htmx@~0.3.1": "0.3.1"
@@ -663,6 +665,9 @@
         "ansi-styles",
         "supports-color"
       ]
+    },
+    "clsx@2.1.1": {
+      "integrity": "sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA=="
     },
     "code-block-writer@13.0.3": {
       "integrity": "sha512-Oofo0pq3IKnsFtuHqSF7TqBfr71aeyZDVJ0HpmqB7FBM2qEigL0iPONSCZSO9pE9dZTAxANe5XHG9Uy0YMv8cg=="
@@ -1405,6 +1410,9 @@
         "has-flag"
       ]
     },
+    "tailwind-merge@3.2.0": {
+      "integrity": "sha512-FQT/OVqCD+7edmmJpsgCsY820RTD5AkBryuG5IUqR5YQZSdj5xlH5nLgH7YPths7WsLPSpSBNneJdM8aS8aeFA=="
+    },
     "tailwindcss@4.1.3": {
       "integrity": "sha512-2Q+rw9vy1WFXu5cIxlvsabCwhU2qUwodGq03ODhLJ0jW4ek5BUtoCsnLB0qG+m8AHgEsSJcJGDSDe06FXlP74g=="
     },
@@ -1535,6 +1543,22 @@
           "npm:typed-htmx@~0.3.1"
         ]
       },
+      "examples/tangled_ascii": {
+        "dependencies": [
+          "jsr:@deno/gfm@0.10",
+          "jsr:@std/fs@^1.0.15",
+          "jsr:@std/path@^1.0.8",
+          "npm:@atproto/lex-cli@~0.7.2",
+          "npm:@atproto/lexicon@~0.4.10",
+          "npm:@atproto/syntax@0.4",
+          "npm:@atproto/xrpc-server@~0.7.15",
+          "npm:@tailwindcss/cli@^4.0.12",
+          "npm:multiformats@^13.3.2",
+          "npm:preact@^10.26.5",
+          "npm:tailwindcss@^4.0.12",
+          "npm:typed-htmx@~0.3.1"
+        ]
+      },
       "packages/bff": {
         "dependencies": [
           "jsr:@bigmoves/atproto-oauth-client@0.1",
@@ -1553,9 +1577,11 @@
           "npm:@atproto/syntax@0.4",
           "npm:@skyware/jetstream@~0.2.2",
           "npm:@tailwindcss/cli@^4.1.3",
+          "npm:clsx@^2.1.1",
           "npm:multiformats@^13.3.2",
           "npm:preact-render-to-string@^6.5.13",
           "npm:preact@^10.26.5",
+          "npm:tailwind-merge@^3.2.0",
           "npm:tailwindcss@^4.1.3",
           "npm:typed-htmx@~0.3.1"
         ]

@@ -1,6 +1,11 @@
-type Props = Readonly<{
-  error?: string;
-}>;
+import type { JSX } from "preact";
+import { cn } from "./utils.ts";
+
+type Props =
+  & JSX.HTMLAttributes<HTMLFormElement>
+  & Readonly<{
+    error?: string;
+  }>;
 
 export function Login(
   { error, ...rest }: Props,
@@ -11,8 +16,8 @@ export function Login(
       hx-post="/oauth/login"
       hx-target="#login-form"
       hx-swap="outerHTML"
-      class="tw:w-full tw:sm:max-w-[300px] tw:space-y-2"
       {...rest}
+      class={cn("tw:w-full tw:sm:max-w-[300px] tw:space-y-2", rest.class)}
     >
       <div>
         <label htmlFor="handle" class="tw:sr-only">

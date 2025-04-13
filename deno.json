@@ -3,7 +3,8 @@
     "./packages/bff",
     "./examples/basic",
     "./examples/blog",
-    "./examples/statusphere"
+    "./examples/statusphere",
+    "./examples/tangled_ascii"
   ],
   "nodeModulesDir": "auto"
 }
