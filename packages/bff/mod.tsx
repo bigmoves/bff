@@ -38,6 +38,7 @@ import type {
 } from "./types.d.ts";
 import { hydrateBlobRefs } from "./utils.ts";
 
+export { JETSTREAM } from "./jetstream.ts";
 export type {
   ActorTable,
   BffContext,
@@ -60,12 +61,16 @@ export async function bff(opts: BffOptions) {
   const handler = createBffHandler(db, oauthClient, bffConfig);
   const jetstream = createSubscription(idxService, bffConfig);
 
-  await backfillRepos(
-    idxService,
-    bffConfig,
-  )(bffConfig.unstable_backfillRepos ?? []);
+  if (bffConfig.unstable_backfillRepos?.length) {
+    await backfillRepos(
+      idxService,
+      bffConfig,
+    )(bffConfig.unstable_backfillRepos);
+  }
 
-  jetstream.connect();
+  if (bffConfig.jetstreamUrl) {
+    jetstream.connect();
+  }
 
   Deno.serve({ port: bffConfig.port }, handler);
 
@@ -89,7 +94,6 @@ function configureBff(cfg: BffOptions): BffConfig {
     databaseUrl: Deno.env.get("BFF_DATABASE_URL") ??
       ":memory:",
     lexiconDir: Deno.env.get("BFF_LEXICON_DIR") ?? "__generated__",
-    jetstreamUrl: cfg.jetstreamUrl ?? "wss://jetstream2.us-west.bsky.network",
     oauthScope: cfg.oauthScope ?? "atproto transition:generic",
     middlewares: cfg.middlewares ?? [],
     rootElement: cfg.rootElement ?? Root,
@@ -141,15 +145,27 @@ const indexService = (db: Database): IndexService => {
       const tableColumns = ["did", "uri"];
 
       if (options?.where && options.where.length > 0) {
-        // Handle multiple where conditions
         options.where.forEach((condition) => {
           const field = condition.field;
+
           if (tableColumns.includes(field)) {
-            query += ` AND ${field} = ?`;
+            if (condition.equals !== undefined) {
+              query += ` AND ${field} = ?`;
+              params.push(condition.equals);
+            } else if (condition.contains !== undefined) {
+              query += ` AND LOWER(${field}) LIKE LOWER(?)`;
+              params.push(`%${condition.contains}%`);
+            }
           } else {
-            query += ` AND JSON_EXTRACT(json, '$.${field}') = ?`;
+            if (condition.equals !== undefined) {
+              query += ` AND JSON_EXTRACT(json, '$.${field}') = ?`;
+              params.push(condition.equals);
+            } else if (condition.contains !== undefined) {
+              query +=
+                ` AND INSTR(LOWER(JSON_EXTRACT(json, '$.${field}')), LOWER(?)) > 0`;
+              params.push(condition.contains);
+            }
           }
-          params.push(condition.value);
         });
       }
 

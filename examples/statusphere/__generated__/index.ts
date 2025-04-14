@@ -7,7 +7,7 @@ import {
   type Options as XrpcOptions,
   type AuthVerifier,
   type StreamAuthVerifier,
-} from '@atproto/xrpc-server'
+} from "npm:@atproto/xrpc-server"
 import { schemas } from './lexicons.ts'
 
 export function createServer(options?: XrpcOptions): Server {

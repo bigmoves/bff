@@ -7,9 +7,14 @@ import {
   type Options as XrpcOptions,
   type AuthVerifier,
   type StreamAuthVerifier,
-} from '@atproto/xrpc-server'
+} from "npm:@atproto/xrpc-server"
 import { schemas } from './lexicons.ts'
 
+export const APP_BSKY_GRAPH = {
+  DefsModlist: 'app.bsky.graph.defs#modlist',
+  DefsCuratelist: 'app.bsky.graph.defs#curatelist',
+  DefsReferencelist: 'app.bsky.graph.defs#referencelist',
+}
 export const APP_BSKY_FEED = {
   DefsRequestLess: 'app.bsky.feed.defs#requestLess',
   DefsRequestMore: 'app.bsky.feed.defs#requestMore',
@@ -26,11 +31,6 @@ export const APP_BSKY_FEED = {
   DefsClickthroughReposter: 'app.bsky.feed.defs#clickthroughReposter',
   DefsContentModeUnspecified: 'app.bsky.feed.defs#contentModeUnspecified',
 }
-export const APP_BSKY_GRAPH = {
-  DefsModlist: 'app.bsky.graph.defs#modlist',
-  DefsCuratelist: 'app.bsky.graph.defs#curatelist',
-  DefsReferencelist: 'app.bsky.graph.defs#referencelist',
-}
 
 export function createServer(options?: XrpcOptions): Server {
   return new Server(options)
@@ -39,14 +39,14 @@ export function createServer(options?: XrpcOptions): Server {
 export class Server {
   xrpc: XrpcServer
   app: AppNS
-  com: ComNS
   dev: DevNS
+  com: ComNS
 
   constructor(options?: XrpcOptions) {
     this.xrpc = createXrpcServer(schemas, options)
     this.app = new AppNS(this)
-    this.com = new ComNS(this)
     this.dev = new DevNS(this)
+    this.com = new ComNS(this)
   }
 }
 
@@ -62,25 +62,17 @@ export class AppNS {
 
 export class AppBskyNS {
   _server: Server
-  actor: AppBskyActorNS
   embed: AppBskyEmbedNS
   feed: AppBskyFeedNS
   richtext: AppBskyRichtextNS
+  actor: AppBskyActorNS
 
   constructor(server: Server) {
     this._server = server
-    this.actor = new AppBskyActorNS(server)
     this.embed = new AppBskyEmbedNS(server)
     this.feed = new AppBskyFeedNS(server)
     this.richtext = new AppBskyRichtextNS(server)
-  }
-}
-
-export class AppBskyActorNS {
-  _server: Server
-
-  constructor(server: Server) {
-    this._server = server
+    this.actor = new AppBskyActorNS(server)
   }
 }
 
@@ -108,27 +100,7 @@ export class AppBskyRichtextNS {
   }
 }
 
-export class ComNS {
-  _server: Server
-  atproto: ComAtprotoNS
-
-  constructor(server: Server) {
-    this._server = server
-    this.atproto = new ComAtprotoNS(server)
-  }
-}
-
-export class ComAtprotoNS {
-  _server: Server
-  repo: ComAtprotoRepoNS
-
-  constructor(server: Server) {
-    this._server = server
-    this.repo = new ComAtprotoRepoNS(server)
-  }
-}
-
-export class ComAtprotoRepoNS {
+export class AppBskyActorNS {
   _server: Server
 
   constructor(server: Server) {
@@ -157,6 +129,34 @@ export class DevFlyNS {
 }
 
 export class DevFlyBffbasicNS {
+  _server: Server
+
+  constructor(server: Server) {
+    this._server = server
+  }
+}
+
+export class ComNS {
+  _server: Server
+  atproto: ComAtprotoNS
+
+  constructor(server: Server) {
+    this._server = server
+    this.atproto = new ComAtprotoNS(server)
+  }
+}
+
+export class ComAtprotoNS {
+  _server: Server
+  repo: ComAtprotoRepoNS
+
+  constructor(server: Server) {
+    this._server = server
+    this.repo = new ComAtprotoRepoNS(server)
+  }
+}
+
+export class ComAtprotoRepoNS {
   _server: Server
 
   constructor(server: Server) {

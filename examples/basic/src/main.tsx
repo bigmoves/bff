@@ -1,6 +1,6 @@
 import { ProfileView } from "$lexicon/types/dev/fly/bffbasic/defs.ts";
 import { BlobRef } from "@atproto/lexicon";
-import { bff, oauth } from "@bigmoves/bff";
+import { bff, JETSTREAM, oauth } from "@bigmoves/bff";
 import { Login } from "@bigmoves/bff/components";
 import { TtlCache } from "@std/cache";
 import { Root } from "./app.tsx";
@@ -16,6 +16,7 @@ export const blobCache = new TtlCache<string, BlobRef>(1000 * 60 * 60);
 bff({
   appName: "AT Protocol App",
   collections: ["dev.fly.bffbasic.profile"],
+  jetstreamUrl: JETSTREAM.WEST_1,
   rootElement: Root,
   middlewares: [
     profileStateResolver,

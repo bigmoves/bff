@@ -1,8 +1,8 @@
 /**
  * GENERATED CODE - DO NOT MODIFY
  */
-import { type ValidationResult, BlobRef } from '@atproto/lexicon'
-import { CID } from 'multiformats/cid'
+import { type ValidationResult, BlobRef } from "npm:@atproto/lexicon"
+import { CID } from "npm:multiformats/cid"
 import { validate as _validate } from '../../../lexicons.ts'
 import { type $Typed, is$typed as _is$typed, type OmitKey } from '../../../util.ts'
 

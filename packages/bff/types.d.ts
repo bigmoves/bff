@@ -42,10 +42,7 @@ type RootElement = <T extends Record<string, unknown>>(
 export type BffOptions = {
   /** The name of the app, used for OAuth */
   appName: string;
-  /**
-   * The URL of the Jetstream server
-   * @default "wss://jetstream2.us-west.bsky.network"
-   */
+  /** The URL of the Jetstream server */
   jetstreamUrl?: string;
   /** Collections to index from the firehose */
   collections: string[];
@@ -95,7 +92,7 @@ export type QueryOptions = {
     field: string;
     direction?: "asc" | "desc";
   };
-  where?: Array<{ field: string; value: string }>;
+  where?: Array<{ field: string; equals?: string; contains?: string }>;
 };
 
 export type IndexService = {
@@ -141,20 +138,6 @@ export type BffContext<State = Record<string, unknown>> = {
   render: (children: ComponentChildren) => Response;
   html: (vnode: VNode) => Response;
 };
-
-export interface JetstreamEvent<T> {
-  did: string;
-  time_us: number;
-  kind: string;
-  commit?: {
-    rev: string;
-    operation: string;
-    collection: string;
-    rkey: string;
-    record: T;
-    cid: string;
-  };
-}
 
 export type onSignedInArgs = {
   actor: ActorTable;

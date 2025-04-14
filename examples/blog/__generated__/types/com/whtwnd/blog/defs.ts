@@ -1,75 +1,80 @@
 /**
  * GENERATED CODE - DO NOT MODIFY
  */
-import { BlobRef } from "@atproto/lexicon";
-import { validate as _validate } from "../../../../lexicons.ts";
-import { is$typed as _is$typed } from "../../../../util.ts";
+import { type ValidationResult, BlobRef } from "npm:@atproto/lexicon"
+import { CID } from "npm:multiformats/cid"
+import { validate as _validate } from '../../../../lexicons.ts'
+import {
+  type $Typed,
+  is$typed as _is$typed,
+  type OmitKey,
+} from '../../../../util.ts'
 
 const is$typed = _is$typed,
-  validate = _validate;
-const id = "com.whtwnd.blog.defs";
+  validate = _validate
+const id = 'com.whtwnd.blog.defs'
 
 export interface BlogEntry {
-  $type?: "com.whtwnd.blog.defs#blogEntry";
-  content: string;
-  createdAt?: string;
+  $type?: 'com.whtwnd.blog.defs#blogEntry'
+  content: string
+  createdAt?: string
 }
 
-const hashBlogEntry = "blogEntry";
+const hashBlogEntry = 'blogEntry'
 
 export function isBlogEntry<V>(v: V) {
-  return is$typed(v, id, hashBlogEntry);
+  return is$typed(v, id, hashBlogEntry)
 }
 
 export function validateBlogEntry<V>(v: V) {
-  return validate<BlogEntry & V>(v, id, hashBlogEntry);
+  return validate<BlogEntry & V>(v, id, hashBlogEntry)
 }
 
 export interface Comment {
-  $type?: "com.whtwnd.blog.defs#comment";
-  content: string;
-  entryUri: string;
+  $type?: 'com.whtwnd.blog.defs#comment'
+  content: string
+  entryUri: string
 }
 
-const hashComment = "comment";
+const hashComment = 'comment'
 
 export function isComment<V>(v: V) {
-  return is$typed(v, id, hashComment);
+  return is$typed(v, id, hashComment)
 }
 
 export function validateComment<V>(v: V) {
-  return validate<Comment & V>(v, id, hashComment);
+  return validate<Comment & V>(v, id, hashComment)
 }
 
 export interface Ogp {
-  $type?: "com.whtwnd.blog.defs#ogp";
-  url: string;
-  width?: number;
-  height?: number;
+  $type?: 'com.whtwnd.blog.defs#ogp'
+  url: string
+  width?: number
+  height?: number
 }
 
-const hashOgp = "ogp";
+const hashOgp = 'ogp'
 
 export function isOgp<V>(v: V) {
-  return is$typed(v, id, hashOgp);
+  return is$typed(v, id, hashOgp)
 }
 
 export function validateOgp<V>(v: V) {
-  return validate<Ogp & V>(v, id, hashOgp);
+  return validate<Ogp & V>(v, id, hashOgp)
 }
 
 export interface BlobMetadata {
-  $type?: "com.whtwnd.blog.defs#blobMetadata";
-  blobref: BlobRef;
-  name?: string;
+  $type?: 'com.whtwnd.blog.defs#blobMetadata'
+  blobref: BlobRef
+  name?: string
 }
 
-const hashBlobMetadata = "blobMetadata";
+const hashBlobMetadata = 'blobMetadata'
 
 export function isBlobMetadata<V>(v: V) {
-  return is$typed(v, id, hashBlobMetadata);
+  return is$typed(v, id, hashBlobMetadata)
 }
 
 export function validateBlobMetadata<V>(v: V) {
-  return validate<BlobMetadata & V>(v, id, hashBlobMetadata);
+  return validate<BlobMetadata & V>(v, id, hashBlobMetadata)
 }

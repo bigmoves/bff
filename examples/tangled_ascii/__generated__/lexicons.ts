@@ -6,7 +6,7 @@ import {
   Lexicons,
   ValidationError,
   type ValidationResult,
-} from '@atproto/lexicon'
+} from "npm:@atproto/lexicon"
 import { type $Typed, is$typed, maybe$typed } from './util.ts'
 
 export const schemaDict = {

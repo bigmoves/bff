@@ -1,4 +1,23 @@
-import type { JetstreamEvent } from "./types.d.ts";
+export enum JETSTREAM {
+  EAST_1 = "wss://jetstream1.us-east.bsky.network",
+  EAST_2 = "wss://jetstream2.us-east.bsky.network",
+  WEST_1 = "wss://jetstream1.us-west.bsky.network",
+  WEST_2 = "wss://jetstream2.us-west.bsky.network",
+}
+
+export type JetstreamEvent<T> = {
+  did: string;
+  time_us: number;
+  kind: string;
+  commit?: {
+    rev: string;
+    operation: string;
+    collection: string;
+    rkey: string;
+    record: T;
+    cid: string;
+  };
+};
 
 export class Jetstream<T> {
   readonly wantedCollections: string[];

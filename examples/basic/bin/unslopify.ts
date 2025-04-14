@@ -1,4 +1,4 @@
-#!/usr/bin/env -S deno run --allow-env
+#!/usr/bin/env -S deno run --unstable-sloppy-imports --allow-read --allow-write
 import { walk } from "@std/fs";
 
 if (import.meta.main) {

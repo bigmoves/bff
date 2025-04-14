@@ -2,6 +2,7 @@ import { Record as StatusRecord } from "$lexicon/types/xyz/statusphere/status.ts
 import { Un$Typed } from "$lexicon/util.ts";
 import {
   bff,
+  JETSTREAM,
   oauth,
   OAUTH_ROUTES,
   RootProps,
@@ -14,6 +15,7 @@ type Status = WithBffMeta<StatusRecord>;
 bff({
   appName: "Statusphere",
   collections: ["xyz.statusphere.status"],
+  jetstreamUrl: JETSTREAM.WEST_1,
   // unstable_backfillRepos: ["did://..."],
   rootElement: Root,
   middlewares: [

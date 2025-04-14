@@ -1,6 +1,6 @@
 import { Record as EntryRecord } from "$lexicon/types/com/whtwnd/blog/entry.ts";
 import { AtUri } from "@atproto/syntax";
-import { bff, RootProps, route, WithBffMeta } from "@bigmoves/bff";
+import { bff, JETSTREAM, RootProps, route, WithBffMeta } from "@bigmoves/bff";
 import { CSS, render } from "@deno/gfm";
 
 type Entry = WithBffMeta<EntryRecord>;
@@ -11,6 +11,7 @@ bff({
   appName: "AT Protocol Blog",
   collections: ["com.whtwnd.blog.entry"],
   unstable_backfillRepos: [REPO],
+  jetstreamUrl: JETSTREAM.WEST_1,
   rootElement: Root,
   middlewares: [
     route("/", (_req, _params, ctx) => {

@@ -1,6 +1,7 @@
 {
   "workspace": [
     "./packages/bff",
+    "./packages/bff-cli",
     "./examples/basic",
     "./examples/blog",
     "./examples/statusphere",

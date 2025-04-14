@@ -5,6 +5,7 @@ import {
   bff,
   BffContext,
   CSS as BffCSS,
+  JETSTREAM,
   oauth,
   RootProps,
   route,
@@ -16,6 +17,7 @@ import { CSS } from "@deno/gfm";
 bff({
   appName: "Tangled ASCII",
   collections: ["sh.tangled.repo", "sh.tangled.feed.star"],
+  jetstreamUrl: JETSTREAM.WEST_1,
   rootElement: Root,
   unstable_backfillRepos: ["did:plc:hwevmowznbiukdf6uk5dwrrq"],
   middlewares: [
