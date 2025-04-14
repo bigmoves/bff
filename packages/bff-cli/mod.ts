@@ -6,11 +6,12 @@ const CODEGEN_DIR = "__generated__";
 
 const MAIN_NAME = "main.tsx";
 const MAIN_CONTENTS = `
-import { bff, oauth, route } from "@bigmoves/bff";
+import { bff, oauth, route, JETSTREAM } from "@bigmoves/bff";
 
 bff({
   appName: "AT Protocol App",
   collections: ["xyz.statusphere.status"],
+  jetstreamUrl: JETSTREAM.WEST_1,
   middlewares: [
     oauth(),
     route("/", (_req, _params, ctx) => {
