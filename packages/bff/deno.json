@@ -8,8 +8,6 @@
     }
   },
   "imports": {
-    "@atcute/bluesky": "npm:@atcute/bluesky@^1.0.15",
-    "@atcute/client": "npm:@atcute/client@^2.0.9",
     "@atproto-labs/handle-resolver-node": "npm:@atproto-labs/handle-resolver-node@^0.1.14",
     "@atproto/api": "npm:@atproto/api@^0.14.19",
     "@atproto/common": "npm:@atproto/common@^0.4.10",
