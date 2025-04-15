@@ -1,5 +1,7 @@
 {
   "name": "@bigmoves/bff",
+  "version": "0.1.0",
+  "license": "MIT",
   "tasks": {
     "tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./styles/input.css -o ./styles/output.css -m",
     "build": {

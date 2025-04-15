@@ -1,5 +1,5 @@
+import { parseArgs } from "@std/cli/parse-args";
 import { join, resolve } from "@std/path";
-import { parseArgs } from "jsr:@std/cli/parse-args";
 
 const LEXICON_DIR = "lexicons";
 const CODEGEN_DIR = "__generated__";

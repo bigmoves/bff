@@ -971,7 +971,9 @@ function indexRecords(
   }
 }
 
-export function backfillUris(indexService: IndexService) {
+export function backfillUris(
+  indexService: IndexService,
+): (uris: string[]) => Promise<void> {
   return async (uris: string[]) => {
     const records = await getRecordsForUris(uris, indexService);
     indexRecords(records, indexService);
@@ -980,7 +982,7 @@ export function backfillUris(indexService: IndexService) {
 
 export function backfillCollections(
   indexService: IndexService,
-) {
+): (repos: string[], collections: string[]) => Promise<void> {
   return async (
     repos: string[],
     collections: string[],

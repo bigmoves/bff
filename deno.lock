@@ -1696,8 +1696,6 @@
           "jsr:@std/fs@^1.0.15",
           "jsr:@std/http@^1.0.13",
           "jsr:@std/path@^1.0.8",
-          "npm:@atcute/bluesky@^1.0.15",
-          "npm:@atcute/client@^2.0.9",
           "npm:@atproto-labs/handle-resolver-node@~0.1.14",
           "npm:@atproto/api@~0.14.19",
           "npm:@atproto/common@~0.4.10",

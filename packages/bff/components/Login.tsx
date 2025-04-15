@@ -9,7 +9,7 @@ type Props =
 
 export function Login(
   { error, ...rest }: Props,
-) {
+): JSX.Element {
   return (
     <form
       id="login-form"
