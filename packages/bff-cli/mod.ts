@@ -146,7 +146,7 @@ async function codegen(
   lexiconDir: string | undefined = LEXICON_DIR,
   codegenDir: string | undefined = CODEGEN_DIR,
 ) {
-  const currentDir = dirname(fromFileUrl(import.meta.url));
+  const currentDir = dirname(fromFileUrl(Deno.mainModule));
   const filesAndDirs = await getJsonFilesAndDirs(lexiconDir);
   const { stdout, stderr } = await new Deno.Command(Deno.execPath(), {
     args: [
