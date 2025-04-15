@@ -187,7 +187,7 @@ function Home({ statuses, didHandleMap, profile, myStatus }: Readonly<{
               </div>
             )}
         </div>
-        <form action="/status" method="post" class="status-options">
+        <form hx-post="/status" class="status-options">
           {STATUS_OPTIONS.map((status) => (
             <button
               type="submit"
