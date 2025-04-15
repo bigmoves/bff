@@ -1,6 +1,14 @@
 import { Record as EntryRecord } from "$lexicon/types/com/whtwnd/blog/entry.ts";
 import { AtUri } from "@atproto/syntax";
-import { bff, JETSTREAM, RootProps, route, WithBffMeta } from "@bigmoves/bff";
+import {
+  backfillCollections,
+  bff,
+  JETSTREAM,
+  onListenArgs,
+  RootProps,
+  route,
+  WithBffMeta,
+} from "@bigmoves/bff";
 import { CSS, render } from "@deno/gfm";
 
 type Entry = WithBffMeta<EntryRecord>;
@@ -10,9 +18,13 @@ const REPO = "did:plc:44ybard66vv44zksje25o7dz";
 bff({
   appName: "AT Protocol Blog",
   collections: ["com.whtwnd.blog.entry"],
-  unstable_backfillRepos: [REPO],
   jetstreamUrl: JETSTREAM.WEST_1,
   rootElement: Root,
+  onListen: async ({ indexService }: onListenArgs) => {
+    await backfillCollections(
+      indexService,
+    )([REPO], ["com.whtwnd.blog.entry"]);
+  },
   middlewares: [
     route("/", (_req, _params, ctx) => {
       const entries = ctx.indexService.getRecords<Entry>(
@@ -119,7 +131,7 @@ function Root(props: RootProps<State>) {
   );
 }
 
-function MetaTags({ meta }: { meta: State["meta"] }) {
+function MetaTags({ meta }: Readonly<{ meta: State["meta"] }>) {
   return (
     <>
       {meta?.title ? <title>{meta?.title}</title> : null}

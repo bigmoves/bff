@@ -3,7 +3,7 @@ import { TID } from "@atproto/common";
 import { type AtprotoData, DidResolver, MemoryCache } from "@atproto/identity";
 import { Lexicons, stringifyLex } from "@atproto/lexicon";
 import { OAuthResolverError } from "@atproto/oauth-client";
-import { isValidHandle } from "@atproto/syntax";
+import { AtUri, isValidHandle } from "@atproto/syntax";
 import {
   AtprotoOAuthClient,
   type NodeSavedSession,
@@ -44,6 +44,7 @@ export type {
   BffContext,
   BffMiddleware,
   BffOptions,
+  onListenArgs,
   onSignedInArgs,
   RecordTable,
   RootProps,
@@ -53,7 +54,7 @@ export type {
 
 export { CSS } from "./styles.ts";
 
-export async function bff(opts: BffOptions) {
+export function bff(opts: BffOptions) {
   const bffConfig = configureBff(opts);
   const db = createDb(bffConfig);
   const idxService = indexService(db);
@@ -61,18 +62,19 @@ export async function bff(opts: BffOptions) {
   const handler = createBffHandler(db, oauthClient, bffConfig);
   const jetstream = createSubscription(idxService, bffConfig);
 
-  if (bffConfig.unstable_backfillRepos?.length) {
-    await backfillRepos(
-      idxService,
-      bffConfig,
-    )(bffConfig.unstable_backfillRepos);
-  }
-
-  if (bffConfig.jetstreamUrl) {
+  if (bffConfig.jetstreamUrl && bffConfig.collections?.length) {
     jetstream.connect();
   }
 
-  Deno.serve({ port: bffConfig.port }, handler);
+  Deno.serve({
+    port: bffConfig.port,
+    onListen({ port, hostname }) {
+      console.log(`Server started at http://${hostname}:${port}`);
+      bffConfig.onListen?.({
+        indexService: idxService,
+      });
+    },
+  }, handler);
 
   Deno.addSignalListener("SIGINT", () => {
     console.log("Shutting down...");
@@ -82,16 +84,12 @@ export async function bff(opts: BffOptions) {
 }
 
 function configureBff(cfg: BffOptions): BffConfig {
-  if (!cfg.collections.length) {
-    throw new Error("No collections provided");
-  }
-
   return {
     ...cfg,
     rootDir: Deno.env.get("BFF_ROOT_DIR") ?? Deno.cwd(),
     publicUrl: Deno.env.get("BFF_PUBLIC_URL") ?? "",
     port: Number(Deno.env.get("BFF_PORT")) || 8080,
-    databaseUrl: Deno.env.get("BFF_DATABASE_URL") ??
+    databaseUrl: cfg.databaseUrl ?? Deno.env.get("BFF_DATABASE_URL") ??
       ":memory:",
     lexiconDir: Deno.env.get("BFF_LEXICON_DIR") ?? "__generated__",
     oauthScope: cfg.oauthScope ?? "atproto transition:generic",
@@ -147,7 +145,6 @@ const indexService = (db: Database): IndexService => {
       if (options?.where && options.where.length > 0) {
         options.where.forEach((condition) => {
           const field = condition.field;
-
           if (tableColumns.includes(field)) {
             if (condition.equals !== undefined) {
               query += ` AND ${field} = ?`;
@@ -155,6 +152,16 @@ const indexService = (db: Database): IndexService => {
             } else if (condition.contains !== undefined) {
               query += ` AND LOWER(${field}) LIKE LOWER(?)`;
               params.push(`%${condition.contains}%`);
+            } else if (
+              condition.in !== undefined && Array.isArray(condition.in)
+            ) {
+              if (condition.in.length === 0) {
+                query += ` AND 0 = 1`; // Empty array means no matches
+              } else {
+                const placeholders = condition.in.map(() => "?").join(", ");
+                query += ` AND ${field} IN (${placeholders})`;
+                params.push(...condition.in);
+              }
             }
           } else {
             if (condition.equals !== undefined) {
@@ -164,6 +171,17 @@ const indexService = (db: Database): IndexService => {
               query +=
                 ` AND INSTR(LOWER(JSON_EXTRACT(json, '$.${field}')), LOWER(?)) > 0`;
               params.push(condition.contains);
+            } else if (
+              condition.in !== undefined && Array.isArray(condition.in)
+            ) {
+              if (condition.in.length === 0) {
+                query += ` AND 0 = 1`; // Empty array means no matches
+              } else {
+                const placeholders = condition.in.map(() => "?").join(", ");
+                query +=
+                  ` AND JSON_EXTRACT(json, '$.${field}') IN (${placeholders})`;
+                params.push(...condition.in);
+              }
             }
           }
         });
@@ -305,7 +323,8 @@ function composeMiddlewares(
     const createRecordFn = createRecord(agent, idxService, cfg);
     const updateRecordFn = updateRecord(agent, idxService, cfg);
     const deleteRecordFn = deleteRecord(agent, idxService);
-    const backfillReposFn = backfillRepos(idxService, cfg);
+    const backfillCollectionsFn = backfillCollections(idxService);
+    const backfillUrisFn = backfillUris(idxService);
 
     const ctx: BffContext = {
       state: {},
@@ -316,10 +335,12 @@ function composeMiddlewares(
       createRecord: createRecordFn,
       updateRecord: updateRecordFn,
       deleteRecord: deleteRecordFn,
-      backfillRepos: backfillReposFn,
+      backfillCollections: backfillCollectionsFn,
+      backfillUris: backfillUrisFn,
       didResolver,
       render: () => new Response(),
       html: html(),
+      redirect: redirect(),
       cfg,
       next: async () => new Response(),
     };
@@ -379,7 +400,7 @@ function createSubscription(
 ) {
   const jetstream = new Jetstream({
     instanceUrl: cfg.jetstreamUrl,
-    wantedCollections: cfg.collections,
+    wantedCollections: cfg.collections ?? [],
     handleEvent: async (event) => {
       if (event.kind !== "commit") return;
       if (!event.commit) return;
@@ -642,7 +663,18 @@ function html() {
   };
 }
 
-function Root(props: RootProps) {
+function redirect() {
+  return (url: string) => {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        location: url,
+      },
+    });
+  };
+}
+
+function Root(props: Readonly<RootProps>) {
   return (
     <html lang="en">
       <head>
@@ -708,10 +740,6 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         ctx.agent = agent;
         ctx.createRecord = createRecord(
           agent,
-          ctx.indexService,
-          ctx.cfg,
-        );
-        ctx.backfillRepos = backfillRepos(
           ctx.indexService,
           ctx.cfg,
         );
@@ -816,71 +844,159 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
   };
 }
 
-function backfillRepos(
+type RecordTableWithoutIndexedAt = Omit<
+  RecordTable,
+  "indexedAt"
+>;
+
+async function getRecordsForRepos(
+  repos: string[],
+  collections: string[],
+  atpMap: Map<string, AtprotoData>,
+): Promise<RecordTableWithoutIndexedAt[]> {
+  const records: RecordTableWithoutIndexedAt[] = [];
+
+  for (const repo of repos) {
+    for (const collection of collections) {
+      let cursor: string | undefined = undefined;
+
+      const atpData = atpMap.get(repo);
+      if (!atpData) {
+        console.error(`No Atproto data found for repo: ${repo}`);
+        continue;
+      }
+
+      const agent = new Agent(new URL(atpData.pds));
+
+      do {
+        const response = await agent.com.atproto.repo.listRecords({
+          repo,
+          collection,
+          cursor,
+          limit: 100,
+        });
+        response.data.records.forEach((r) => {
+          records.push({
+            uri: r.uri,
+            cid: r.cid.toString(),
+            did: repo,
+            collection,
+            json: stringifyLex(r.value),
+          } as RecordTableWithoutIndexedAt);
+        });
+        cursor = response.data.cursor ?? undefined; // Continue fetching if there's more data
+      } while (cursor);
+    }
+  }
+  return records;
+}
+
+async function getAtpMapForRepos(
+  repos: string[],
+): Promise<Map<string, AtprotoData>> {
+  const didResolver = new DidResolver({
+    didCache: new MemoryCache(),
+  });
+  const atpMap = new Map<string, AtprotoData>();
+  for (const repo of repos) {
+    const atpData = await didResolver.resolveAtprotoData(repo);
+    if (!atpMap.has(atpData.did)) {
+      atpMap.set(atpData.did, atpData);
+    }
+  }
+  return atpMap;
+}
+
+async function getRecordsForUris(
+  uris: string[],
   indexService: IndexService,
-  cfg: BffConfig,
+): Promise<RecordTableWithoutIndexedAt[]> {
+  const records: RecordTableWithoutIndexedAt[] = [];
+
+  uris = uris.filter((uri) => {
+    const record = indexService.getRecord(uri);
+    return !record;
+  });
+  if (uris.length === 0) {
+    return records;
+  }
+
+  const dids = uris.map((uri) => new AtUri(uri).hostname);
+  const atpMap = await getAtpMapForRepos(dids);
+
+  for (const uri of uris) {
+    const did = new AtUri(uri).hostname;
+    const atpData = atpMap.get(did);
+    if (!atpData) {
+      console.error(`No Atproto data found for repo: ${did}`);
+      continue;
+    }
+    const agent = new Agent(new URL(atpData.pds));
+    try {
+      console.log(`Fetching record for ${uri}`);
+      const collection = new AtUri(uri).collection;
+      const response = await agent.com.atproto.repo.getRecord({
+        repo: did,
+        collection: collection,
+        rkey: new AtUri(uri).rkey,
+      });
+      records.push({
+        uri: response.data.uri,
+        cid: response.data.cid,
+        did,
+        collection,
+        json: stringifyLex(response.data.value),
+      } as RecordTableWithoutIndexedAt);
+    } catch (error) {
+      console.error(`Failed to fetch record from ${uri}:`, error);
+      continue;
+    }
+  }
+  return records;
+}
+
+function indexRecords(
+  records: RecordTableWithoutIndexedAt[],
+  indexService: IndexService,
 ) {
-  return async (repos: string[], collections?: string[]) => {
-    if (!repos.length) return;
-
-    const collectionsToSync = collections ?? cfg.collections;
-
-    const didResolver = new DidResolver({
-      didCache: new MemoryCache(),
+  for (const record of records) {
+    indexService.insertRecord({
+      uri: record.uri,
+      cid: record.cid.toString(),
+      did: record.did,
+      collection: record.collection,
+      json: record.json,
+      indexedAt: new Date().toISOString(),
     });
+  }
+}
 
-    const atpMap = new Map<string, AtprotoData>();
+export function backfillUris(indexService: IndexService) {
+  return async (uris: string[]) => {
+    const records = await getRecordsForUris(uris, indexService);
+    indexRecords(records, indexService);
+  };
+}
+
+export function backfillCollections(
+  indexService: IndexService,
+) {
+  return async (
+    repos: string[],
+    collections: string[],
+  ) => {
+    const atpMap = await getAtpMapForRepos(repos);
+    const records = await getRecordsForRepos(repos, collections, atpMap);
     for (const repo of repos) {
-      const atpData = await didResolver.resolveAtprotoData(repo);
-      if (!atpMap.has(atpData.did)) {
-        atpMap.set(atpData.did, atpData);
-      }
+      const atpData = atpMap.get(repo);
+      if (!atpData) continue;
+      indexService.insertActor({
+        did: repo,
+        handle: atpData.handle,
+        indexedAt: new Date().toISOString(),
+      });
     }
-
-    for (const repo of repos) {
-      for (const collection of collectionsToSync) {
-        let cursor: string | undefined = undefined;
-        // deno-lint-ignore no-explicit-any
-        let allRecords: any[] = [];
-
-        const atpData = atpMap.get(repo);
-
-        if (!atpData) {
-          console.error(`No Atproto data found for repo: ${repo}`);
-          continue;
-        }
-
-        const agent = new Agent(new URL(atpData.pds!));
-
-        do {
-          const response = await agent.com.atproto.repo.listRecords({
-            repo,
-            collection,
-            cursor,
-            limit: 100,
-          });
-          allRecords = [...allRecords, ...response.data.records];
-          cursor = response.data.cursor ?? undefined; // Continue fetching if there's more data
-        } while (cursor);
-
-        for (const record of allRecords) {
-          indexService.insertActor({
-            did: repo,
-            handle: atpData.handle,
-            indexedAt: new Date().toISOString(),
-          });
-
-          indexService.insertRecord({
-            uri: record.uri,
-            cid: record.cid.toString(),
-            did: repo,
-            collection,
-            json: stringifyLex(record.value),
-            indexedAt: new Date().toISOString(),
-          });
-        }
-      }
-    }
+    indexRecords(records, indexService);
   };
 }
 

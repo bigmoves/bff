@@ -2,11 +2,13 @@ import { Record as Star } from "$lexicon/types/sh/tangled/feed/star.ts";
 import { Record as Repo } from "$lexicon/types/sh/tangled/repo.ts";
 import { AtUri } from "@atproto/syntax";
 import {
+  backfillCollections,
   bff,
   BffContext,
   CSS as BffCSS,
   JETSTREAM,
   oauth,
+  onListenArgs,
   RootProps,
   route,
   WithBffMeta,
@@ -19,11 +21,15 @@ bff({
   collections: ["sh.tangled.repo", "sh.tangled.feed.star"],
   jetstreamUrl: JETSTREAM.WEST_1,
   rootElement: Root,
-  unstable_backfillRepos: ["did:plc:hwevmowznbiukdf6uk5dwrrq"],
+  onListen: async ({ indexService }: onListenArgs) => {
+    await backfillCollections(
+      indexService,
+    )(["did:plc:hwevmowznbiukdf6uk5dwrrq"], ["sh.tangled.repo"]);
+  },
   middlewares: [
     oauth({
       onSignedIn: async ({ actor, ctx }) => {
-        await ctx.backfillRepos([actor.did], [
+        await ctx.backfillCollections([actor.did], [
           "sh.tangled.feed.star",
         ]);
         return "/";
@@ -114,7 +120,7 @@ bff({
         {
           where: [{
             field: "subject",
-            value: repoUri,
+            equals: repoUri,
           }],
         },
       );
@@ -322,10 +328,13 @@ async function getReposWithActorAndTrees(
       stars = ctx.indexService.getRecords(
         "sh.tangled.feed.star",
         {
-          where: [{
-            field: "subject",
-            value: repo.uri,
-          }, { field: "did", value: userDid }],
+          where: [
+            {
+              field: "subject",
+              equals: repo.uri,
+            },
+            { field: "did", equals: userDid },
+          ],
         },
       );
     }

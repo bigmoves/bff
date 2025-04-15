@@ -60,7 +60,7 @@ export class Jetstream<T> {
       this.#ws.onopen = () => {
         this.#isConnected = true;
         this.#reconnectAttempt = 0;
-        console.log("Connected to Jetstream");
+        console.log("Connected to Jetstream at %s", this.#instanceUrl);
         resolve();
       };
 

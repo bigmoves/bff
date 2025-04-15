@@ -10,12 +10,12 @@ export async function onSignedIn({
 }: onSignedInArgs) {
   let bskyProfileRecord: BskyProfileRecord | undefined;
 
-  await ctx.backfillRepos([actor.did]);
+  await ctx.backfillCollections([actor.did], ctx.cfg.collections!);
 
   const [profile] = ctx.indexService.getRecords<ProfileRecord>(
     "dev.fly.bffbasic.profile",
     {
-      where: [{ field: "did", value: actor.did }],
+      where: [{ field: "did", equals: actor.did }],
     },
   );
 

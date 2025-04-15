@@ -39,13 +39,20 @@ type RootElement = <T extends Record<string, unknown>>(
   props: RootProps<T>,
 ) => preact.VNode;
 
+export type onListenArgs = { indexService: IndexService };
+
 export type BffOptions = {
   /** The name of the app, used for OAuth */
   appName: string;
+  /**
+   * The URL of the database, used for SQLite
+   * @default ":memory:"
+   */
+  databaseUrl?: string;
   /** The URL of the Jetstream server */
   jetstreamUrl?: string;
   /** Collections to index from the firehose */
-  collections: string[];
+  collections?: string[];
   /** OAuth Scopes */
   /** @default "atproto transition:generic" */
   oauthScope?: string;
@@ -53,8 +60,8 @@ export type BffOptions = {
   middlewares?: BffMiddleware[];
   /** The root element of the app */
   rootElement?: RootElement;
-  /** List of repos to backfill from given the provided collections. Runs on application boot */
-  unstable_backfillRepos?: string[];
+  /** Called when the server starts listening. */
+  onListen?: (params: onListenArgs) => Promise<void> | void;
 };
 
 export type EnvConfig = {
@@ -92,7 +99,9 @@ export type QueryOptions = {
     field: string;
     direction?: "asc" | "desc";
   };
-  where?: Array<{ field: string; equals?: string; contains?: string }>;
+  where?: Array<
+    { field: string; equals?: string; contains?: string; in?: string[] }
+  >;
 };
 
 export type IndexService = {
@@ -111,6 +120,11 @@ export type IndexService = {
   getActorByHandle: (handle: string) => ActorTable | undefined;
 };
 
+type backfillReposFn = (
+  repos: string[],
+  collections?: string[],
+) => Promise<void>;
+
 export type BffContext<State = Record<string, unknown>> = {
   state: State;
   didResolver: DidResolver;
@@ -126,9 +140,12 @@ export type BffContext<State = Record<string, unknown>> = {
     data: Partial<T>,
   ) => Promise<void>;
   deleteRecord: (collection: string, rkey: string) => Promise<void>;
-  backfillRepos: (
+  backfillCollections: (
     repos: string[],
-    collections?: string[],
+    collections: string[],
+  ) => Promise<void>;
+  backfillUris: (
+    uris: string[],
   ) => Promise<void>;
   indexService: IndexService;
   oauthClient: AtprotoOAuthClient;
@@ -137,6 +154,7 @@ export type BffContext<State = Record<string, unknown>> = {
   next: () => Promise<Response>;
   render: (children: ComponentChildren) => Response;
   html: (vnode: VNode) => Response;
+  redirect: (url: string) => Response;
 };
 
 export type onSignedInArgs = {

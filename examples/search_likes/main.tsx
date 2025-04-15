@@ -1,0 +1,175 @@
+import { Record as Profile } from "$lexicon/types/app/bsky/actor/profile.ts";
+import { Record as Like } from "$lexicon/types/app/bsky/feed/like.ts";
+import { Record as Post } from "$lexicon/types/app/bsky/feed/post.ts";
+import { AtUri } from "@atproto/syntax";
+import {
+  bff,
+  CSS,
+  oauth,
+  onSignedInArgs,
+  RootProps,
+  route,
+  WithBffMeta,
+} from "@bigmoves/bff";
+
+// NOTE: More of a proof of concept. Expensive to gather all post records across the network.
+// Though you only need to pull the post records once, and then you can use the index service.
+bff({
+  appName: "AT Protocol | Search Bsky Likes App",
+  // databaseUrl: "likes.db",
+  rootElement: Root,
+  middlewares: [
+    oauth({
+      onSignedIn: async ({ actor, ctx }: onSignedInArgs) => {
+        await ctx.backfillCollections(
+          [actor.did],
+          ["app.bsky.feed.like"],
+        );
+        let likes = ctx.indexService.getRecords<WithBffMeta<Like>>(
+          "app.bsky.feed.like",
+        );
+        likes = likes.slice(0, 10);
+        // posts
+        await ctx.backfillUris(
+          likes.map((l) => l.subject.uri.toString()),
+        );
+        // profiles
+        await ctx.backfillUris(
+          likes.map((l) =>
+            `at://${
+              new AtUri(l.subject.uri).hostname
+            }/app.bsky.actor.profile/self`
+          ),
+        );
+        return "/";
+      },
+    }),
+    route("/likes", (req, _params, ctx) => {
+      const url = new URL(req.url);
+      const search = url.searchParams.get("search");
+      const did = ctx.currentUser?.did;
+      if (!did) {
+        return ctx.redirect("/login");
+      }
+
+      const likes = ctx.indexService.getRecords<WithBffMeta<Like>>(
+        "app.bsky.feed.like",
+        {
+          orderBy: { field: "createdAt", direction: "desc" },
+          where: [{ field: "did", contains: did }],
+        },
+      );
+
+      const profiles = ctx.indexService.getRecords<WithBffMeta<Profile>>(
+        "app.bsky.actor.profile",
+        {
+          where: [{
+            field: "did",
+            in: likes.map((l) => new AtUri(l.subject.uri).hostname),
+          }],
+        },
+      );
+
+      const postUris = likes.map((l) => l.subject.uri.toString());
+
+      let posts = [];
+
+      if (search) {
+        posts = ctx.indexService.getRecords<WithBffMeta<Post>>(
+          "app.bsky.feed.post",
+          {
+            where: [
+              { field: "uri", in: postUris },
+              { field: "text", contains: search },
+            ],
+          },
+        );
+      } else {
+        posts = ctx.indexService.getRecords<WithBffMeta<Post>>(
+          "app.bsky.feed.post",
+          {
+            where: [{ field: "uri", in: postUris }],
+          },
+        );
+      }
+
+      const profilesByDid = new Map(
+        profiles.map((profile) => [profile.did, profile]),
+      );
+      const profileMap = new Map(
+        posts.map((post) => {
+          const did = new AtUri(post.uri).hostname;
+          const profile = profilesByDid.get(did);
+          return [post.uri, profile];
+        }),
+      );
+      const postAuthor = (post: WithBffMeta<Post>) => {
+        const profile = profileMap.get(post.uri);
+        if (profile) {
+          return (
+            <img
+              src={`https://cdn.bsky.app/img/feed_thumbnail/plain/${profile.did}/${profile?.avatar?.ref.toString()}`}
+              alt=""
+              title={profile.displayName}
+              class="w-8 h-8 rounded-full mr-2"
+            />
+          );
+        }
+        return null;
+      };
+
+      const postsByUri = new Map(posts.map((post) => [post.uri, post]));
+      const orderedPosts = postUris
+        .map((uri) => postsByUri.get(uri))
+        .filter((post): post is WithBffMeta<Post> => post !== undefined);
+
+      return ctx.html(
+        <ul class="space-y-2">
+          {orderedPosts.map((p) => (
+            <li key={p.uri} class="flex items-center">
+              {postAuthor(p)}
+              {p.text}
+            </li>
+          ))}
+        </ul>,
+      );
+    }),
+    route("/", (_req, _params, ctx) => {
+      const did = ctx.currentUser?.did;
+      if (!did) {
+        return ctx.redirect("/login");
+      }
+      return ctx.render(
+        <>
+          <form hx-get="/likes" hx-target="#likes" class="my-2 flex gap-2">
+            <input
+              type="text"
+              name="search"
+              placeholder="Search posts..."
+              class="border p-2 w-[300px]"
+            />
+            <button type="submit">Search</button>
+          </form>
+          <div id="likes" hx-get="/likes" hx-target="this" hx-trigger="load" />
+        </>,
+      );
+    }),
+  ],
+});
+
+function Root(props: Readonly<RootProps>) {
+  return (
+    <html lang="en" class="w-full h-full">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+        <style dangerouslySetInnerHTML={{ __html: CSS }} />
+        <link rel="stylesheet" href="/static/styles.css" />
+      </head>
+      <body class="h-full max-w-5xl mx-auto px-2">
+        {props.children}
+      </body>
+    </html>
+  );
+}

@@ -5,7 +5,8 @@
     "./examples/basic",
     "./examples/blog",
     "./examples/statusphere",
-    "./examples/tangled_ascii"
+    "./examples/tangled_ascii",
+    "./examples/search_likes"
   ],
   "nodeModulesDir": "auto"
 }

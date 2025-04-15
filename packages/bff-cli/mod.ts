@@ -51,6 +51,62 @@ declare module "preact" {
 }
 `;
 
+if (import.meta.main) {
+  const flags = parseArgs(Deno.args, {
+    boolean: ["help"],
+    string: ["unstable-lexicons"],
+    alias: { h: "help" },
+    "--": true,
+  });
+
+  if (flags.help) {
+    printHelp();
+  }
+
+  const command = Deno.args[0];
+  if (command == null) {
+    printHelp();
+  }
+
+  switch (command) {
+    case "init":
+      if (!Deno.args[1] || Deno.args[1].startsWith("-")) {
+        console.error("Please provide a directory to initialize.");
+        Deno.exit(0);
+      }
+      await init(Deno.args[1]);
+      if (flags["unstable-lexicons"]) {
+        await addLexicons(flags["unstable-lexicons"], Deno.args[1]);
+        await codegen(
+          join(Deno.args[1], LEXICON_DIR),
+          join(Deno.args[1], CODEGEN_DIR),
+        );
+      }
+      break;
+    case "lex": {
+      await codegen();
+      break;
+    }
+    case "tailwind": {
+      await installTailwindDeps();
+      const existingConfig = await Deno.readTextFile("./deno.json");
+      const updatedConfig = addTailwindTasksToDenoJson(existingConfig);
+      await Deno.writeTextFile("./deno.json", updatedConfig);
+      await Deno.writeTextFile(
+        "./input.css",
+        `@import "tailwindcss";`,
+      );
+      break;
+    }
+    default:
+      console.log('Please use "init" command to initialize a bff project.');
+      printHelp();
+      break;
+  }
+} else {
+  throw new Error("This module is meant to be executed as a CLI.");
+}
+
 async function init(directory: string) {
   directory = resolve(directory);
 
@@ -147,59 +203,13 @@ function printHelp(): void {
   Deno.exit(0);
 }
 
-if (import.meta.main) {
-  const flags = parseArgs(Deno.args, {
-    boolean: ["help"],
-    string: ["unstable-lexicons"],
-    alias: { h: "help" },
-    "--": true,
-  });
-
-  if (flags.help) {
-    printHelp();
-  }
-
-  const command = Deno.args[0];
-  if (command == null) {
-    printHelp();
-  }
-
-  switch (command) {
-    case "init":
-      if (!Deno.args[1] || Deno.args[1].startsWith("-")) {
-        console.error("Please provide a directory to initialize.");
-        Deno.exit(0);
-      }
-      await init(Deno.args[1]);
-      if (flags["unstable-lexicons"]) {
-        await addLexicons(flags["unstable-lexicons"], Deno.args[1]);
-        await codegen(
-          join(Deno.args[1], LEXICON_DIR),
-          join(Deno.args[1], CODEGEN_DIR),
-        );
-      }
-      break;
-    case "lex": {
-      await codegen();
-      break;
-    }
-    default:
-      console.log('Please use "init" command to initialize a bff project.');
-      printHelp();
-      break;
-  }
-} else {
-  throw new Error("This module is meant to be executed as a CLI.");
-}
-
 function logCommandOutput(
   stdout: Uint8Array<ArrayBuffer>,
   stderr: Uint8Array<ArrayBuffer>,
 ) {
   const error = new TextDecoder().decode(stderr);
   if (error) {
-    console.error("Error:", stderr);
-    throw new Error("Failed to add lexicons.");
+    console.error("Error:", error);
   }
   const output = new TextDecoder().decode(stdout);
   console.log("Output:", output);
@@ -224,4 +234,34 @@ async function getJsonFilesAndDirs(dirPath: string): Promise<string[]> {
   }
 
   return result;
+}
+
+async function installTailwindDeps() {
+  const { stderr } = await new Deno.Command(Deno.execPath(), {
+    args: [
+      "add",
+      "npm:@tailwindcss/cli",
+      "npm:tailwindcss",
+    ],
+  }).output();
+  const error = new TextDecoder().decode(stderr);
+  if (error) {
+    console.error(error);
+  }
+}
+
+function addTailwindTasksToDenoJson(existingDenoJson: string) {
+  const config = typeof existingDenoJson === "string"
+    ? JSON.parse(existingDenoJson)
+    : existingDenoJson;
+
+  config.tasks = {
+    ...(config.tasks || {}),
+    "dev": 'deno run "dev:*"',
+    "dev:server": "deno run -A --watch ./main.tsx",
+    "dev:tailwind":
+      "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./input.css -o ./static/styles.css --watch",
+  };
+
+  return JSON.stringify(config, null, 2);
 }

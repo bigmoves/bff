@@ -16,7 +16,6 @@ bff({
   appName: "Statusphere",
   collections: ["xyz.statusphere.status"],
   jetstreamUrl: JETSTREAM.WEST_1,
-  // unstable_backfillRepos: ["did://..."],
   rootElement: Root,
   middlewares: [
     oauth({
