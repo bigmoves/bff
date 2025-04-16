@@ -14,8 +14,6 @@ if (import.meta.main) {
   }
 }
 
-// @atproto/lexicon, @atproto/xrpc-server, multiformats
-
 async function processFile(file: string): Promise<void> {
   try {
     const text = await Deno.readTextFile(file);

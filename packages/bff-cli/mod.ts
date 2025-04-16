@@ -1,5 +1,5 @@
 import { parseArgs } from "@std/cli/parse-args";
-import { dirname, fromFileUrl, join, resolve } from "@std/path";
+import { join, resolve } from "@std/path";
 
 const LEXICON_DIR = "lexicons";
 const CODEGEN_DIR = "__generated__";
@@ -146,7 +146,6 @@ async function codegen(
   lexiconDir: string | undefined = LEXICON_DIR,
   codegenDir: string | undefined = CODEGEN_DIR,
 ) {
-  const currentDir = dirname(fromFileUrl(Deno.mainModule));
   const filesAndDirs = await getJsonFilesAndDirs(lexiconDir);
   const { stdout, stderr } = await new Deno.Command(Deno.execPath(), {
     args: [
@@ -165,7 +164,7 @@ async function codegen(
       "run",
       "-A",
       "--unstable-sloppy-imports",
-      join(currentDir, "./unslopify.ts"),
+      "jsr:@bigmoves/bff-cli/unslopify.ts",
       codegenDir,
     ],
   }).output();
@@ -174,7 +173,7 @@ async function codegen(
     args: [
       "run",
       "-A",
-      join(currentDir, "./replace_imports.ts"),
+      "jsr:@bigmoves/bff-cli/replace_imports.ts",
       codegenDir,
     ],
   }).output();
