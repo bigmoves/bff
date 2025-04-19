@@ -3,7 +3,7 @@ import { cn } from "./utils.ts";
 
 type Props = JSX.TextareaHTMLAttributes<HTMLTextAreaElement>;
 
-export function Textarea(props: Props) {
+export function Textarea(props: Props): JSX.Element {
   const { class: classProp, ...rest } = props;
   const className = cn(
     "bff-input",

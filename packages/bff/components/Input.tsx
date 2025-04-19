@@ -7,7 +7,7 @@ type Props =
     variant?: "hidden";
   }>;
 
-export function Input(props: Props) {
+export function Input(props: Props): JSX.Element {
   const { variant, class: classProp, ...rest } = props;
   const className = cn(
     "bff-input",

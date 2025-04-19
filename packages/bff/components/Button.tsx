@@ -8,7 +8,7 @@ type Props =
     asChild?: boolean;
   }>;
 
-export function Button(props: Props) {
+export function Button(props: Props): JSX.Element {
   const { variant, class: classProp, asChild, children, ...rest } = props;
   const className = cn(
     "bff-btn",
