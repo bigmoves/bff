@@ -8,9 +8,10 @@ export async function onSignedIn({
   actor,
   ctx,
 }: onSignedInArgs) {
-  let bskyProfileRecord: BskyProfileRecord | undefined;
-
-  await ctx.backfillCollections([actor.did], ctx.cfg.collections!);
+  await ctx.backfillCollections([actor.did], [
+    ...ctx.cfg.collections!,
+    "app.bsky.actor.profile",
+  ]);
 
   const [profile] = ctx.indexService.getRecords<ProfileRecord>(
     "dev.fly.bffbasic.profile",
@@ -24,17 +25,14 @@ export async function onSignedIn({
     return `/profile/${actor.handle}`;
   }
 
-  try {
-    bskyProfileRecord = await ctx.agent?.com.atproto.repo.getRecord({
-      repo: actor.did,
-      collection: "app.bsky.actor.profile",
-      rkey: "self",
-    }).then((res) => res.data.value as BskyProfileRecord);
-  } catch (error) {
-    console.error("Error fetching Bsky Profile:", error);
-  }
+  const [bskyProfile] = ctx.indexService.getRecords<BskyProfileRecord>(
+    "app.bsky.actor.profile",
+    {
+      where: [{ field: "did", equals: actor.did }],
+    },
+  );
 
-  if (!bskyProfileRecord) {
+  if (!bskyProfile) {
     console.error("Failed to get profile");
     return;
   }
@@ -42,9 +40,9 @@ export async function onSignedIn({
   await ctx.createRecord<ProfileRecord>(
     "dev.fly.bffbasic.profile",
     {
-      displayName: bskyProfileRecord.displayName ?? undefined,
-      description: bskyProfileRecord.description ?? undefined,
-      avatar: bskyProfileRecord.avatar ?? undefined,
+      displayName: bskyProfile.displayName ?? undefined,
+      description: bskyProfile.description ?? undefined,
+      avatar: bskyProfile.avatar ?? undefined,
       createdAt: new Date().toISOString(),
     },
     true,

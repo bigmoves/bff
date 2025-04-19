@@ -1,8 +1,6 @@
 {
   "imports": {
     "$lexicon/": "./__generated__/",
-    "@atproto/lexicon": "npm:@atproto/lexicon@^0.4.10",
-    "@std/cache": "jsr:@std/cache@^0.2.0",
     "@tailwindcss/cli": "npm:@tailwindcss/cli@^4.0.12",
     "preact": "npm:preact@^10.26.5",
     "tailwindcss": "npm:tailwindcss@^4.0.12",
@@ -15,7 +13,7 @@
     "codegen": "deno run -A ../../packages/bff-cli/mod.ts lex"
   },
   "compilerOptions": {
-    "jsx": "precompile",
+    "jsx": "react-jsx",
     "jsxImportSource": "preact"
   }
 }

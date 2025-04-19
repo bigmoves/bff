@@ -10,7 +10,8 @@ export function AvatarForm({ src, alt }: Props) {
       hx-encoding="multipart/form-data"
       hx-trigger="change from:#file"
     >
-      <label>
+      <label htmlFor="file">
+        <span class="sr-only">Upload avatar</span>
         <div class="border rounded-full border-slate-900 w-16 h-16 mx-auto mb-2 relative my-2 cursor-pointer">
           <div class="absolute bottom-0 right-0 bg-slate-800 rounded-full w-5 h-5 flex items-center justify-center">
             <i class="fa-solid fa-camera text-white text-xs"></i>
@@ -28,7 +29,7 @@ export function AvatarForm({ src, alt }: Props) {
           </div>
         </div>
         <input
-          class="input hidden"
+          class="hidden"
           type="file"
           id="file"
           name="file"

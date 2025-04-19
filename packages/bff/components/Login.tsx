@@ -1,4 +1,6 @@
 import type { JSX } from "preact";
+import { Button } from "./Button.tsx";
+import { Input } from "./Input.tsx";
 import { cn } from "./utils.ts";
 
 type Props =
@@ -17,22 +19,30 @@ export function Login(
       hx-target="#login-form"
       hx-swap="outerHTML"
       {...rest}
-      class={cn("tw:w-full tw:sm:max-w-[300px] tw:space-y-2", rest.class)}
+      class={cn(
+        "tw:mx-4 tw:sm:mx-0 tw:w-full tw:sm:max-w-[300px] tw:space-y-2",
+        rest.class,
+      )}
     >
       <div>
         <label htmlFor="handle" class="tw:sr-only">
           Handle
         </label>
-        <input
+        <Input
           id="handle"
           class="input"
           placeholder="Handle (e.g., user.bsky.social)"
           name="handle"
         />
       </div>
-      <button id="submit" type="submit" class="btn btn-primary tw:w-full">
+      <Button
+        variant="primary"
+        id="submit"
+        type="submit"
+        class="tw:w-full"
+      >
         Login with AT Protocol
-      </button>
+      </Button>
       <div className="tw:h-4">
         {error ? <div className="tw:text-sm tw:font-mono">{error}</div> : null}
       </div>

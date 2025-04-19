@@ -11,24 +11,29 @@ import {
   route,
   WithBffMeta,
 } from "@bigmoves/bff";
+import { Button, Input, Layout, Login } from "@bigmoves/bff/components";
 
 // NOTE: More of a proof of concept. Expensive to gather all post records across the network.
 // Though you only need to pull the post records once, and then you can use the index service.
 bff({
   appName: "AT Protocol | Search Bsky Likes App",
-  // databaseUrl: "likes.db",
+  databaseUrl: "likes.db",
   rootElement: Root,
   middlewares: [
     oauth({
+      LoginComponent: ({ error }) => (
+        <div id="login" class="flex justify-center items-center w-full h-full">
+          <Login hx-target="#login" error={error} />
+        </div>
+      ),
       onSignedIn: async ({ actor, ctx }: onSignedInArgs) => {
         await ctx.backfillCollections(
           [actor.did],
           ["app.bsky.feed.like"],
         );
-        let likes = ctx.indexService.getRecords<WithBffMeta<Like>>(
+        const likes = ctx.indexService.getRecords<WithBffMeta<Like>>(
           "app.bsky.feed.like",
         );
-        likes = likes.slice(0, 10);
         // posts
         await ctx.backfillUris(
           likes.map((l) => l.subject.uri.toString()),
@@ -141,14 +146,14 @@ bff({
       }
       return ctx.render(
         <>
-          <form hx-get="/likes" hx-target="#likes" class="my-2 flex gap-2">
-            <input
+          <form hx-get="/likes" hx-target="#likes" class="mb-4 flex gap-2">
+            <Input
               type="text"
               name="search"
               placeholder="Search posts..."
-              class="border p-2 w-[300px]"
+              class="w-[300px]"
             />
-            <button type="submit">Search</button>
+            <Button variant="primary" type="submit">Search</Button>
           </form>
           <div id="likes" hx-get="/likes" hx-target="this" hx-trigger="load" />
         </>,
@@ -167,8 +172,19 @@ function Root(props: Readonly<RootProps>) {
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
         <link rel="stylesheet" href="/static/styles.css" />
       </head>
-      <body class="h-full max-w-5xl mx-auto px-2">
-        {props.children}
+      <body class="h-full w-full">
+        <Layout>
+          <Layout.Nav
+            title={
+              <>
+                <span className="text-sky-600">@</span> likes
+              </>
+            }
+          />
+          <Layout.Content class="p-4">
+            {props.children}
+          </Layout.Content>
+        </Layout>
       </body>
     </html>
   );

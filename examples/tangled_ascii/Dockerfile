@@ -7,8 +7,10 @@ COPY ../../examples/basic/ /app/examples/basic/
 COPY ../../examples/blog/ /app/examples/blog/
 COPY ../../examples/statusphere/ /app/examples/statusphere/
 COPY ../../examples/tangled_ascii/ /app/examples/tangled_ascii/
+COPY ../../examples/image_gallery/ /app/examples/image_gallery/
+COPY ../../examples/search_likes/ /app/examples/search_likes/
 COPY ../../packages/bff/ /app/packages/bff/
-
+COPY ../../packages/bff-cli/ /app/packages/bff-cli/
 RUN deno cache ./examples/tangled_ascii/main.tsx
 
 # Prefer not to run as root.

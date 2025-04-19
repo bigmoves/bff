@@ -1,6 +1,8 @@
 import type { Agent } from "@atproto/api";
 import type { DidResolver } from "@atproto/identity";
+import type { BlobRef } from "@atproto/lexicon";
 import type { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
+import type { TtlCache } from "@std/cache";
 import type { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, FunctionComponent, VNode } from "preact";
 
@@ -120,6 +122,15 @@ export type IndexService = {
   getActorByHandle: (handle: string) => ActorTable | undefined;
 };
 
+type BlobMeta = {
+  blobRef: BlobRef;
+  dataUrl: string;
+  dimensions?: {
+    width?: number;
+    height?: number;
+  };
+};
+
 type backfillReposFn = (
   repos: string[],
   collections?: string[],
@@ -129,17 +140,18 @@ export type BffContext<State = Record<string, unknown>> = {
   state: State;
   didResolver: DidResolver;
   agent?: Agent;
+  blobMetaCache: TtlCache<string, BlobMeta>;
   createRecord: <T>(
     collection: string,
     data: Partial<T>,
     self?: boolean,
-  ) => Promise<void>;
+  ) => Promise<string>;
   updateRecord: <T>(
     collection: string,
     rkey: string,
     data: Partial<T>,
-  ) => Promise<void>;
-  deleteRecord: (collection: string, rkey: string) => Promise<void>;
+  ) => Promise<string>;
+  deleteRecord: (uri: string) => Promise<void>;
   backfillCollections: (
     repos: string[],
     collections: string[],

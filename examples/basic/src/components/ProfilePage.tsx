@@ -1,4 +1,5 @@
 import { ProfileView } from "$lexicon/types/dev/fly/bffbasic/defs.ts";
+import { Button } from "@bigmoves/bff/components";
 
 type Props = Readonly<{
   isLoggedIn: boolean;
@@ -35,7 +36,8 @@ export function ProfilePage(
         {isLoggedIn
           ? (
             <div class="w-full sm:w-fit flex flex-col sm:flex-row gap-2 pt-2 sm:pt-0">
-              <button
+              <Button
+                variant="primary"
                 type="button"
                 hx-get="/modals/profile"
                 hx-trigger="click"
@@ -44,7 +46,7 @@ export function ProfilePage(
                 class="btn btn-primary w-full sm:w-fit"
               >
                 Edit profile
-              </button>
+              </Button>
             </div>
           )
           : null}

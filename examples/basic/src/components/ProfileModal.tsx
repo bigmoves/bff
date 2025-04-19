@@ -1,5 +1,6 @@
 import { ProfileView } from "$lexicon/types/dev/fly/bffbasic/defs.ts";
 import { Record as BffBasicProfile } from "$lexicon/types/dev/fly/bffbasic/profile.ts";
+import { Button, Input, Textarea } from "@bigmoves/bff/components";
 import { AvatarForm } from "./AvatarForm.tsx";
 
 type Props = Readonly<{
@@ -47,7 +48,7 @@ export function ProfileModal(
           </div>
           <div class="mb-4 relative">
             <label htmlFor="displayName" class="label">Display Name</label>
-            <input
+            <Input
               type="text"
               id="displayName"
               name="displayName"
@@ -57,28 +58,30 @@ export function ProfileModal(
           </div>
           <div class="mb-4 relative">
             <label htmlFor="description" class="label">Description</label>
-            <textarea
+            <Textarea
               id="description"
               name="description"
               rows={4}
               class="input"
             >
               {profile.description}
-            </textarea>
+            </Textarea>
           </div>
-          <button
+          <Button
             type="submit"
             class="btn btn-primary w-full mb-2"
+            variant="primary"
           >
             Update
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="secondary"
             type="button"
             class="btn btn-secondary w-full"
             _="on click trigger closeModal"
           >
             Cancel
-          </button>
+          </Button>
         </form>
       </div>
     </div>

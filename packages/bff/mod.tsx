@@ -12,12 +12,15 @@ import {
   type NodeSavedStateStore,
 } from "@bigmoves/atproto-oauth-client";
 import { assert } from "@std/assert";
+import { TtlCache } from "@std/cache";
 import { deleteCookie, getCookies, setCookie } from "@std/http";
 import { serveDir } from "@std/http/file-server";
 import { join } from "@std/path/join";
+import { Buffer } from "node:buffer";
 import { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, VNode } from "preact";
 import { render as renderToString } from "preact-render-to-string";
+import sharp from "sharp";
 import { Login } from "./components/Login.tsx";
 import { Jetstream } from "./jetstream.ts";
 import { CSS } from "./styles.ts";
@@ -27,6 +30,7 @@ import type {
   BffContext,
   BffMiddleware,
   BffOptions,
+  BlobMeta,
   Database,
   HttpMethod,
   IndexService,
@@ -44,6 +48,7 @@ export type {
   BffContext,
   BffMiddleware,
   BffOptions,
+  BlobMeta,
   onListenArgs,
   onSignedInArgs,
   RecordTable,
@@ -54,7 +59,7 @@ export type {
 
 export { CSS } from "./styles.ts";
 
-export function bff(opts: BffOptions) {
+export async function bff(opts: BffOptions) {
   const bffConfig = configureBff(opts);
   const db = createDb(bffConfig);
   const idxService = indexService(db);
@@ -66,13 +71,15 @@ export function bff(opts: BffOptions) {
     jetstream.connect();
   }
 
+  // TODO: maybe should be onBeforeListen
+  await bffConfig.onListen?.({
+    indexService: idxService,
+  });
+
   Deno.serve({
     port: bffConfig.port,
     onListen({ port, hostname }) {
       console.log(`Server started at http://${hostname}:${port}`);
-      bffConfig.onListen?.({
-        indexService: idxService,
-      });
     },
   }, handler);
 
@@ -286,6 +293,8 @@ function createBffHandler(
   };
 }
 
+const blobMetaCache = new TtlCache<string, BlobMeta>(1000 * 60 * 5); // 5 min
+
 function composeMiddlewares(
   db: Database,
   oauthClient: AtprotoOAuthClient,
@@ -343,6 +352,7 @@ function composeMiddlewares(
       redirect: redirect(),
       cfg,
       next: async () => new Response(),
+      blobMetaCache,
     };
 
     ctx.render = render(ctx, cfg);
@@ -559,14 +569,16 @@ function createRecord(
       validate: false,
     });
 
+    const uri = `at://${did}/${collection}/${rkey}`;
     indexService.insertRecord({
-      uri: `at://${did}/${collection}/${rkey}`,
+      uri,
       cid: response.data.cid.toString(),
       did,
       collection,
       json: stringifyLex(record),
       indexedAt: new Date().toISOString(),
     });
+    return uri;
   };
 }
 
@@ -602,14 +614,16 @@ function updateRecord(
       validate: false,
     });
 
+    const uri = `at://${did}/${collection}/${rkey}`;
     indexService.insertRecord({
-      uri: `at://${did}/${collection}/${rkey}`,
+      uri,
       cid: response.data.cid.toString(),
       did,
       collection,
       json: stringifyLex(record),
       indexedAt: new Date().toISOString(),
     });
+    return uri;
   };
 }
 
@@ -617,20 +631,20 @@ function deleteRecord(
   agent: Agent | undefined,
   indexService: IndexService,
 ) {
-  return async (collection: string, rkey: string) => {
+  return async (uri: string) => {
     const did = agent?.assertDid;
 
     if (!did) {
       throw new Error("Agent is not authenticated");
     }
 
+    const atUri = new AtUri(uri);
     await agent.com.atproto.repo.deleteRecord({
       repo: agent.assertDid,
-      collection,
-      rkey,
+      collection: atUri.collection,
+      rkey: atUri.rkey,
     });
-
-    indexService.deleteRecord(`at://${did}/${collection}/${rkey}`);
+    indexService.deleteRecord(atUri.toString());
   };
 }
 
@@ -666,9 +680,9 @@ function html() {
 function redirect() {
   return (url: string) => {
     return new Response(null, {
-      status: 302,
+      status: 200,
       headers: {
-        location: url,
+        "HX-Redirect": url,
       },
     });
   };
@@ -1042,4 +1056,119 @@ export function route(
 
     return await ctx.next();
   };
+}
+
+export function uploadHandler(
+  cb: (blobMeta: BlobMeta[]) => VNode,
+  options?: {
+    compress: boolean;
+  },
+): RouteHandler {
+  return async (req, _params, ctx) => {
+    const formData = await req.formData();
+    const file = formData.get("file") as File;
+    const files = formData.getAll("files") as File[];
+
+    if (!ctx.agent) {
+      return new Response("Agent not initialized", { status: 500 });
+    }
+
+    if (!file && !files.length) {
+      return new Response("No files provided", { status: 400 });
+    }
+
+    const filesToUpload = file ? [file] : files;
+    const blobMetas: BlobMeta[] = [];
+
+    for (const file of filesToUpload) {
+      let processedFile = file;
+
+      if (options?.compress) {
+        try {
+          processedFile = await compressImage(file);
+        } catch (error) {
+          console.error("Error compressing image:", error);
+          return new Response("Failed to compress image", { status: 500 });
+        }
+      }
+
+      const blobResponse = await ctx.agent.uploadBlob(processedFile);
+
+      if (!blobResponse) {
+        return new Response("Failed to upload blob", { status: 500 });
+      }
+
+      let dimensions: { width?: number; height?: number } | undefined;
+      try {
+        dimensions = await getImageDimensions(file);
+      } catch (error) {
+        console.error("Error getting image dimensions:", error);
+      }
+
+      const cid = blobResponse.data.blob.ref.toString();
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const base64 = btoa(
+        new Uint8Array(buffer).reduce(function (data, byte) {
+          return data + String.fromCharCode(byte);
+        }, ""),
+      );
+      const dataUrl =
+        `data:${blobResponse.data.blob.mimeType};base64,${base64}`;
+      const blobMeta: BlobMeta = {
+        blobRef: blobResponse.data.blob,
+        dataUrl,
+        dimensions,
+      };
+      ctx.blobMetaCache.set(cid, blobMeta);
+      blobMetas.push(blobMeta);
+    }
+    return ctx.html(
+      cb(blobMetas),
+    );
+  };
+}
+
+async function getImageDimensions(file: File) {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const metadata = await sharp(buffer).metadata();
+    const { width, height } = metadata;
+    return { width, height };
+  } catch (error) {
+    console.error("Error getting image dimensions:", error);
+    throw error;
+  }
+}
+
+async function compressImage(file: File): Promise<File> {
+  const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
+  let quality = 90;
+  const arrayBuffer = await file.arrayBuffer();
+  const fileBuffer = Buffer.from(arrayBuffer);
+
+  const image = sharp(fileBuffer);
+  const metadata = await image.metadata();
+
+  let width = metadata.width || 1920;
+  let buffer = await image
+    .resize({ width })
+    .webp({ quality })
+    .toBuffer();
+
+  while (buffer.length > MAX_FILE_SIZE && (quality > 10 || width > 500)) {
+    if (quality > 30) {
+      quality -= 5;
+    } else {
+      width = Math.floor(width * 0.9); // shrink by 10% each time if quality is already low
+    }
+
+    buffer = await sharp(fileBuffer)
+      .resize({ width })
+      .webp({ quality })
+      .toBuffer();
+  }
+
+  const blob = new Blob([buffer], { type: "image/webp" });
+  return new File([blob], file.name, { type: "image/webp" });
 }

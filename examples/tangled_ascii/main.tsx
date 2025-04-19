@@ -1,6 +1,5 @@
 import { Record as Star } from "$lexicon/types/sh/tangled/feed/star.ts";
 import { Record as Repo } from "$lexicon/types/sh/tangled/repo.ts";
-import { AtUri } from "@atproto/syntax";
 import {
   backfillCollections,
   bff,
@@ -13,7 +12,7 @@ import {
   route,
   WithBffMeta,
 } from "@bigmoves/bff";
-import { Login } from "@bigmoves/bff/components";
+import { Layout, Login } from "@bigmoves/bff/components";
 import { CSS } from "@deno/gfm";
 
 bff({
@@ -24,22 +23,21 @@ bff({
   onListen: async ({ indexService }: onListenArgs) => {
     await backfillCollections(
       indexService,
-    )(["did:plc:hwevmowznbiukdf6uk5dwrrq"], ["sh.tangled.repo"]);
+    )(["did:plc:wshs7t2adsemcrrd4snkeqli"], ["sh.tangled.repo"]);
   },
   middlewares: [
     oauth({
+      LoginComponent: ({ error }) => (
+        <div id="login" class="flex justify-center items-center w-full h-full">
+          <Login hx-target="#login" error={error} />
+        </div>
+      ),
       onSignedIn: async ({ actor, ctx }) => {
         await ctx.backfillCollections([actor.did], [
           "sh.tangled.feed.star",
         ]);
         return "/";
       },
-      LoginComponent: LoginModal,
-    }),
-    route("/modals/login", (_req, _params, ctx) => {
-      return ctx.html(
-        <LoginModal />,
-      );
     }),
     route("/", async (_req, _params, ctx) => {
       const repos = ctx.indexService.getRecords<WithBffMeta<Repo>>(
@@ -100,19 +98,10 @@ bff({
     }),
     route("/star", ["POST"], async (req, _params, ctx) => {
       const formData = await req.formData();
-      const starredString = formData.get("starred");
-      const starred = starredString === "true";
       const repoUri = formData.get("repoUri") as string;
 
       if (!ctx.currentUser) {
-        return ctx.html(
-          <>
-            <StarFormInner uri={repoUri} starred={starred} />
-            <div hx-swap-oob="afterbegin:body">
-              <LoginModal error="You must be logged in to star a repo." />
-            </div>
-          </>,
-        );
+        return ctx.redirect("/login");
       }
 
       const stars = ctx.indexService.getRecords<WithBffMeta<Star>>(
@@ -127,10 +116,7 @@ bff({
       const star = stars[0];
 
       if (star) {
-        ctx.deleteRecord(
-          "sh.tangled.feed.star",
-          new AtUri(star.uri).rkey,
-        );
+        ctx.deleteRecord(star.uri);
         return ctx.html(<StarFormInner uri={repoUri} starred={false} />);
       }
 
@@ -159,7 +145,7 @@ function Root(props: RootProps) {
       <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Tangled ASCII</title>
+        <title>tangled ascii</title>
         <script src="https://unpkg.com/htmx.org@1.9.10" />
         <script src="https://unpkg.com/hyperscript.org@0.9.14" />
         <style dangerouslySetInnerHTML={{ __html: BffCSS }} />
@@ -171,46 +157,21 @@ function Root(props: RootProps) {
           preload
         />
       </head>
-      <body class="max-w-4xl mx-auto px-4 h-full">
-        <div class="flex justify-end">
-          <button
-            type="button"
-            class="btn btn-primary my-2"
-            hx-get="/modals/login"
-            hx-trigger="click"
-            hx-target="body"
-            hx-swap="afterbegin"
-          >
-            Login
-          </button>
-        </div>
-        {children}
+      <body class="h-full w-full">
+        <Layout>
+          <Layout.Nav
+            title={
+              <>
+                <span className="text-sky-600">@</span> tangled ascii
+              </>
+            }
+          />
+          <Layout.Content class="p-4">
+            {children}
+          </Layout.Content>
+        </Layout>
       </body>
     </html>
-  );
-}
-
-function LoginModal({ error }: Readonly<{ error?: string }>) {
-  return (
-    <div
-      id="modal"
-      _="on closeModal remove me"
-      class="fixed top-0 bottom-0 right-0 left-0 flex items-center justify-center"
-    >
-      <div
-        _="on click trigger closeModal"
-        class="absolute top-0 left-0 right-0 bottom-0 bg-black/80"
-      >
-      </div>
-      <div class="w-[400px] bg-white flex flex-col p-4 z-10">
-        <Login
-          error={error}
-          class="w-full sm:max-w-none mt-6"
-          hx-target="#modal"
-          hx-swap="innerHTML"
-        />
-      </div>
-    </div>
   );
 }
 

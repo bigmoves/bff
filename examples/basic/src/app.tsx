@@ -1,6 +1,10 @@
+import { ProfileView } from "$lexicon/types/dev/fly/bffbasic/defs.ts";
 import { CSS, RootProps } from "@bigmoves/bff";
-import { Nav } from "./components/Nav.tsx";
-import { State } from "./main.tsx";
+import { Layout } from "@bigmoves/bff/components";
+
+export type State = {
+  profile?: ProfileView;
+};
 
 export function Root(props: RootProps<State>) {
   return (
@@ -18,11 +22,20 @@ export function Root(props: RootProps<State>) {
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
         <link rel="stylesheet" href="/static/styles.css" />
       </head>
-      <body class="h-full max-w-5xl mx-auto sm:border-x relative">
-        <Nav profile={props.ctx.state.profile} />
-        <main id="main" class="h-[calc(100vh-56px)] sm:overflow-y-auto px-4">
-          {props.children}
-        </main>
+      <body class="h-full w-full">
+        <Layout>
+          <Layout.Nav
+            title={
+              <>
+                <span className="text-sky-600">@</span> bff
+              </>
+            }
+            profile={props.ctx.state.profile}
+          />
+          <Layout.Content>
+            {props.children}
+          </Layout.Content>
+        </Layout>
       </body>
     </html>
   );

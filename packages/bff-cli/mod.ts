@@ -34,7 +34,7 @@ const DENO_JSON_CONTENTS = `{
     "codegen": "deno run -A ../../packages/bff-cli/mod.ts lex"
   },
   "compilerOptions": {
-    "jsx": "precompile",
+    "jsx": "react-jsx",
     "jsxImportSource": "preact"
   }
 }

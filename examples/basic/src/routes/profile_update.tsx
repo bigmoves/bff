@@ -1,11 +1,10 @@
 import { Record as BffBasicProfile } from "$lexicon/types/dev/fly/bffbasic/profile.ts";
 import { BffContext, RouteHandler } from "@bigmoves/bff";
-import { blobCache, State } from "../main.tsx";
 
 export const handler: RouteHandler = async (
   req,
   _params,
-  ctx: BffContext<State>,
+  ctx: BffContext,
 ) => {
   const formData = await req.formData();
   const displayName = formData.get("displayName") as string;
@@ -34,7 +33,8 @@ export const handler: RouteHandler = async (
     {
       displayName,
       description,
-      avatar: blobCache.get(avatarCid) ?? record.avatar,
+      avatar: ctx.blobMetaCache.get(avatarCid)?.blobRef ??
+        record.avatar,
     },
   );
 

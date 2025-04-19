@@ -6,7 +6,8 @@
     "./examples/blog",
     "./examples/statusphere",
     "./examples/tangled_ascii",
-    "./examples/search_likes"
+    "./examples/search_likes",
+    "./examples/image_gallery"
   ],
   "nodeModulesDir": "auto"
 }
