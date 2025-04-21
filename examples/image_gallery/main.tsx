@@ -280,6 +280,7 @@ function getActorGalleries(handleOrDid: string, ctx: BffContext) {
   const galleries = ctx.indexService.getRecords<WithBffMeta<Gallery>>(
     "app.bigmoves.gallery",
     {
+      orderBy: { field: "createdAt", direction: "desc" },
       where: [
         {
           field: "did",
