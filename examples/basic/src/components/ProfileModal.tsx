@@ -47,7 +47,7 @@ export function ProfileModal(
             />
           </div>
           <div class="mb-4 relative">
-            <label htmlFor="displayName" class="label">Display Name</label>
+            <label htmlFor="displayName">Display Name</label>
             <Input
               type="text"
               id="displayName"
@@ -57,7 +57,7 @@ export function ProfileModal(
             />
           </div>
           <div class="mb-4 relative">
-            <label htmlFor="description" class="label">Description</label>
+            <label htmlFor="description">Description</label>
             <Textarea
               id="description"
               name="description"

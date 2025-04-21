@@ -49,7 +49,7 @@ const LayoutNav: FunctionalComponent<LayoutNavProps> = ({ title, profile }) => {
   return (
     <nav class="tw:w-full tw:border-b tw:border-slate-950 tw:flex tw:justify-between tw:items-center tw:px-4 tw:h-14">
       <div class="tw:flex tw:items-center tw:space-x-4">
-        <a hx-boost="true" href="/">
+        <a href="/">
           <h1 class="tw:text-2xl tw:font-semibold">
             {title}
           </h1>
@@ -60,9 +60,9 @@ const LayoutNav: FunctionalComponent<LayoutNavProps> = ({ title, profile }) => {
           ? (
             <div class="tw:flex tw:items-center tw:space-x-2">
               <form hx-post="/logout" hx-swap="none" class="inline">
-                <button type="submit" class="btn btn-link">Sign out</button>
+                <Button type="submit" variant="secondary">Sign out</Button>
               </form>
-              <a href={`/profile/${profile.handle}`} hx-boost="true">
+              <a href={`/profile/${profile.handle}`}>
                 <img
                   src={profile.avatar}
                   alt={profile.handle}
@@ -79,7 +79,7 @@ const LayoutNav: FunctionalComponent<LayoutNavProps> = ({ title, profile }) => {
                 </Button>
               </form>
               <Button variant="secondary" asChild>
-                <a hx-boost="true" href="/login">
+                <a href="/login">
                   Sign in
                 </a>
               </Button>

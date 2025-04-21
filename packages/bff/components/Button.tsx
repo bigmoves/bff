@@ -4,7 +4,7 @@ import { cn } from "./utils.ts";
 type Props =
   & JSX.ButtonHTMLAttributes<HTMLButtonElement>
   & Readonly<{
-    variant?: "primary" | "secondary";
+    variant?: "primary" | "secondary" | "destructive";
     asChild?: boolean;
   }>;
 
@@ -14,6 +14,7 @@ export function Button(props: Props): JSX.Element {
     "bff-btn",
     variant === "primary" && "bff-btn-primary",
     variant === "secondary" && "bff-btn-secondary",
+    variant === "destructive" && "bff-btn-destructive",
     classProp,
   );
   if (

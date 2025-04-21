@@ -730,12 +730,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         const url = await ctx.oauthClient.authorize(handle, {
           signal: req.signal,
         });
-        return new Response(null, {
-          status: 200,
-          headers: {
-            "HX-Redirect": url.toString(),
-          },
-        });
+        return ctx.redirect(url.toString());
       } catch (err) {
         console.error("oauth authorize failed:", err);
         const error = err instanceof OAuthResolverError
@@ -811,21 +806,10 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
             signal: req.signal,
           },
         );
-        return new Response(null, {
-          status: 302,
-          headers: { "HX-Redirect": url.toString() },
-        });
+        return ctx.redirect(url.toString());
       } catch (err) {
         console.error("oauth authorize failed:", err);
-        return new Response(
-          null,
-          {
-            status: 302,
-            headers: {
-              "HX-Redirect": "/",
-            },
-          },
-        );
+        return ctx.redirect("/");
       }
     }
 
@@ -1143,31 +1127,47 @@ async function getImageDimensions(file: File) {
 
 async function compressImage(file: File): Promise<File> {
   const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
+  const TARGET_WIDTH = 1200;
   let quality = 90;
+
   const arrayBuffer = await file.arrayBuffer();
   const fileBuffer = Buffer.from(arrayBuffer);
 
-  const image = sharp(fileBuffer);
-  const metadata = await image.metadata();
-
-  let width = metadata.width || 1920;
-  let buffer = await image
-    .resize({ width })
+  let buffer = await sharp(fileBuffer)
+    .autoOrient()
+    .resize({ width: TARGET_WIDTH, withoutEnlargement: true })
     .webp({ quality })
     .toBuffer();
 
-  while (buffer.length > MAX_FILE_SIZE && (quality > 10 || width > 500)) {
-    if (quality > 30) {
-      quality -= 5;
-    } else {
-      width = Math.floor(width * 0.9); // shrink by 10% each time if quality is already low
-    }
+  if (buffer.length <= MAX_FILE_SIZE) {
+    const blob = new Blob([buffer], { type: "image/webp" });
+    return new File([blob], file.name, { type: "image/webp" });
+  }
+
+  let minQuality = 10;
+  let maxQuality = 75;
+
+  while (minQuality <= maxQuality) {
+    quality = Math.floor((minQuality + maxQuality) / 2);
 
     buffer = await sharp(fileBuffer)
-      .resize({ width })
+      .autoOrient()
+      .resize({ width: TARGET_WIDTH, withoutEnlargement: true })
       .webp({ quality })
       .toBuffer();
+
+    if (buffer.length <= MAX_FILE_SIZE) {
+      minQuality = quality + 1; // Try to find higher quality that fits
+    } else {
+      maxQuality = quality - 1; // Need lower quality
+    }
   }
+
+  buffer = await sharp(fileBuffer)
+    .autoOrient()
+    .resize({ width: TARGET_WIDTH, withoutEnlargement: true })
+    .webp({ quality: maxQuality })
+    .toBuffer();
 
   const blob = new Blob([buffer], { type: "image/webp" });
   return new File([blob], file.name, { type: "image/webp" });

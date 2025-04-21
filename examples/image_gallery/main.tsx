@@ -36,23 +36,21 @@ bff({
   appName: "AT Protocol Image Gallery",
   collections: ["app.bigmoves.gallery"],
   jetstreamUrl: JETSTREAM.WEST_1,
-  databaseUrl: "gallery.db",
+  // databaseUrl: "gallery.db",
   onListen: async ({ indexService }: onListenArgs) => {
-    await backfillCollections(
-      indexService,
-    )(["did:plc:bcgltzqazw5tb6k2g3ttenbj"], [
-      "app.bsky.actor.profile",
-      "app.bigmoves.gallery",
-    ]);
+    await backfillCollections(indexService)(
+      ["did:plc:bcgltzqazw5tb6k2g3ttenbj"],
+      ["app.bsky.actor.profile", "app.bigmoves.gallery"],
+    );
   },
   rootElement: Root,
   middlewares: [
     oauth({
       onSignedIn: async ({ actor, ctx }: onSignedInArgs) => {
-        await ctx.backfillCollections([actor.did], [
-          "app.bsky.actor.profile",
-          "app.bigmoves.gallery",
-        ]);
+        await ctx.backfillCollections(
+          [actor.did],
+          ["app.bsky.actor.profile", "app.bigmoves.gallery"],
+        );
         return "/";
       },
       LoginComponent: ({ error }) => (
@@ -73,8 +71,22 @@ bff({
     },
     route("/", (_req, _params, ctx) => {
       const galleries = getTimeline(ctx);
+      return ctx.render(<Timeline galleries={galleries} />);
+    }),
+    route("/profile/:handle", (_req, params, ctx) => {
+      const handle = params.handle;
+      const galleries = getActorGalleries(handle, ctx);
+      if (!galleries) return ctx.next();
+      const actor = ctx.indexService.getActorByHandle(handle);
+      if (!actor) return ctx.next();
+      const profile = getActorProfile(actor.did, ctx);
+      if (!profile) return ctx.next();
       return ctx.render(
-        <Timeline isLoggedIn={!!ctx.currentUser} galleries={galleries} />,
+        <ProfilePage
+          galleries={galleries}
+          isLoggedIn={!!ctx.currentUser}
+          profile={profile}
+        />,
       );
     }),
     route("/profile/:handle/:rkey", (_req, params, ctx) => {
@@ -83,7 +95,11 @@ bff({
       const gallery = getGallery(handle, rkey, ctx);
       if (!gallery) return ctx.next();
       return ctx.render(
-        <GalleryPage gallery={gallery} isLoggedIn={!!ctx.currentUser} />,
+        <GalleryPage
+          gallery={gallery}
+          isLoggedIn={!!ctx.currentUser}
+          isCreator={ctx.currentUser?.did === gallery.creator.did}
+        />,
       );
     }),
     route("/modals/image", (req, _params, ctx) => {
@@ -91,8 +107,9 @@ bff({
       const galleryUri = url.searchParams.get("galleryUri");
       const imageCid = url.searchParams.get("imageCid");
       if (!galleryUri || !imageCid) return ctx.next();
-      const galleryDid = new AtUri(galleryUri).hostname;
-      const galleryRkey = new AtUri(galleryUri).rkey;
+      const atUri = new AtUri(galleryUri);
+      const galleryDid = atUri.hostname;
+      const galleryRkey = atUri.rkey;
       const gallery = getGallery(galleryDid, galleryRkey, ctx);
       const image = gallery?.images?.find((image) => {
         return image.cid === imageCid;
@@ -105,10 +122,26 @@ bff({
       const searchParams = new URLSearchParams(url.search);
       const uri = searchParams.get("uri");
       if (!uri) return ctx.html(<GalleryModal />);
-      const did = new AtUri(uri).hostname;
-      const rkey = new AtUri(uri).rkey;
+      const atUri = new AtUri(uri);
+      const did = atUri.hostname;
+      const rkey = atUri.rkey;
       const gallery = getGallery(did, rkey, ctx);
       return ctx.html(<GalleryModal gallery={gallery} />);
+    }),
+    route("/modals/image-alt", (req, _params, ctx) => {
+      const url = new URL(req.url);
+      const galleryUri = url.searchParams.get("galleryUri");
+      const imageCid = url.searchParams.get("imageCid");
+      if (!galleryUri || !imageCid) return ctx.next();
+      const atUri = new AtUri(galleryUri);
+      const galleryDid = atUri.hostname;
+      const galleryRkey = atUri.rkey;
+      const gallery = getGallery(galleryDid, galleryRkey, ctx);
+      const image = gallery?.images?.find((image) => {
+        return image.cid === imageCid;
+      });
+      if (!image || !gallery) return ctx.next();
+      return ctx.html(<ImageAltModal galleryUri={gallery.uri} image={image} />);
     }),
     route(
       "/actions/upload",
@@ -151,11 +184,7 @@ bff({
       if (uri) {
         const gallery = ctx.indexService.getRecord<WithBffMeta<Gallery>>(uri);
         if (!gallery) return ctx.next();
-        images = gallery.images
-          ? [...gallery.images, ...images].filter((i) =>
-            cids.includes(i.image.ref.toString())
-          )
-          : images;
+        images = mergeUniqueImages(gallery.images, images, cids);
         const rkey = new AtUri(uri).rkey;
         await ctx.updateRecord<Gallery>("app.bigmoves.gallery", rkey, {
           title,
@@ -186,6 +215,36 @@ bff({
       await ctx.deleteRecord(uri);
       return ctx.redirect("/");
     }),
+    route("/actions/image-alt", ["POST"], async (req, _params, ctx) => {
+      if (!ctx.currentUser) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      const formData = await req.formData();
+      const alt = formData.get("alt") as string;
+      const cid = formData.get("cid") as string;
+      const galleryUri = formData.get("galleryUri") as string;
+      const gallery = ctx.indexService.getRecord<WithBffMeta<Gallery>>(
+        galleryUri,
+      );
+      if (!gallery) return ctx.next();
+      const images = gallery?.images?.map((image) => {
+        if (image.image.ref.toString() === cid) {
+          return {
+            ...image,
+            alt,
+          };
+        }
+        return image;
+      });
+      const rkey = new AtUri(galleryUri).rkey;
+      await ctx.updateRecord<Gallery>("app.bigmoves.gallery", rkey, {
+        title: gallery.title,
+        description: gallery.description,
+        images,
+        createdAt: gallery.createdAt,
+      });
+      return new Response(null, { status: 200 });
+    }),
   ],
 });
 
@@ -194,7 +253,7 @@ export type State = {
 };
 
 function getTimeline(ctx: BffContext): GalleryView[] {
-  const galleryViews: GalleryView[] = [];
+  const galleryViews: Un$Typed<GalleryView>[] = [];
   const galleries = ctx.indexService.getRecords<WithBffMeta<Gallery>>(
     "app.bigmoves.gallery",
     { orderBy: { field: "createdAt", direction: "desc" } },
@@ -207,6 +266,32 @@ function getTimeline(ctx: BffContext): GalleryView[] {
     galleryViews.push(galleryToView(gallery, profile));
   }
   return galleryViews;
+}
+
+function getActorGalleries(handleOrDid: string, ctx: BffContext) {
+  let did: string;
+  if (handleOrDid.includes("did:")) {
+    did = handleOrDid;
+  } else {
+    const actor = ctx.indexService.getActorByHandle(handleOrDid);
+    if (!actor) return null;
+    did = actor.did;
+  }
+  const galleries = ctx.indexService.getRecords<WithBffMeta<Gallery>>(
+    "app.bigmoves.gallery",
+    {
+      where: [
+        {
+          field: "did",
+          equals: did,
+        },
+      ],
+    },
+  );
+  if (!galleries) return null;
+  const profile = getActorProfile(did, ctx);
+  if (!profile) return null;
+  return galleries.map((g) => galleryToView(g, profile));
 }
 
 function getGallery(handleOrDid: string, rkey: string, ctx: BffContext) {
@@ -254,24 +339,89 @@ function Root(props: Readonly<RootProps<State>>) {
             }
             profile={profile}
           />
-          <Layout.Content>
-            {props.children}
-          </Layout.Content>
+          <Layout.Content>{props.children}</Layout.Content>
         </Layout>
       </body>
     </html>
   );
 }
 
-function Timeline(
-  { isLoggedIn, galleries }: Readonly<
-    { isLoggedIn: boolean; galleries: GalleryView[] }
-  >,
-) {
+function Timeline({
+  galleries,
+}: Readonly<{ galleries: Un$Typed<GalleryView>[] }>) {
+  return (
+    <div class="px-4">
+      <div class="my-4">
+        <h1 class="text-xl font-semibold">Timeline</h1>
+      </div>
+      <ul class="space-y-4">
+        {galleries.map((gallery) => (
+          <li key={gallery.uri} class="space-y-1.5">
+            <div>
+              <a
+                href={profileLink(gallery)}
+                class="font-semibold hover:underline"
+              >
+                @{gallery.creator.handle}
+              </a>{" "}
+              created{" "}
+              <a href={galleryLink(gallery)} class="font-semibold">
+                {(gallery.record as Gallery).title}
+              </a>
+              <span class="ml-1">
+                {formatDistanceStrict(
+                  (gallery.record as Gallery).createdAt,
+                  new Date(),
+                  {
+                    addSuffix: true,
+                  },
+                )}
+              </span>
+            </div>
+            <a
+              href={`/profile/${gallery.creator.handle}/${
+                new AtUri(gallery.uri).rkey
+              }`}
+              class="flex flex-wrap gap-2"
+            >
+              {gallery.images?.length
+                ? gallery?.images?.map((image) => (
+                  <img
+                    src={image.thumb}
+                    alt={image.alt}
+                    class="min-w-[50px] max-w-[50px] h-[50px] object-cover"
+                  />
+                ))
+                : null}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ProfilePage({
+  galleries,
+  isLoggedIn,
+  profile,
+}: Readonly<{
+  galleries: Un$Typed<GalleryView>[];
+  isLoggedIn: boolean;
+  profile: Un$Typed<ProfileViewBasic>;
+}>) {
   return (
     <div class="px-4">
       <div class="flex items-center justify-between my-4">
-        <h1 class="text-xl font-semibold">Timeline</h1>
+        <div class="flex flex-col">
+          <img
+            src={profile.avatar}
+            alt={profile.handle}
+            class="rounded-full object-cover size-16"
+          />
+          <p class="text-2xl font-bold">{profile.displayName}</p>
+          <p class="text-gray-600">@{profile.handle}</p>
+        </div>
         {isLoggedIn
           ? (
             <Button
@@ -280,20 +430,19 @@ function Timeline(
               hx-trigger="click"
               hx-target="#layout"
               hx-swap="afterbegin"
+              class="self-start"
             >
               Create Gallery
             </Button>
           )
           : null}
       </div>
+      <h1 class="text-xl font-semibold my-4">Activity</h1>
       <ul class="space-y-4">
         {galleries.map((gallery) => (
           <li key={gallery.uri} class="space-y-1.5">
             <div>
-              <a href={profileLink(gallery)} class="font-semibold">
-                @{gallery.creator.handle}
-              </a>{" "}
-              created{" "}
+              Created{" "}
               <a href={galleryLink(gallery)} class="font-semibold">
                 {(gallery.record as Gallery).title}
               </a>
@@ -330,11 +479,15 @@ function Timeline(
   );
 }
 
-function GalleryPage(
-  { gallery, isLoggedIn }: Readonly<
-    { gallery: GalleryView; isLoggedIn: boolean }
-  >,
-) {
+function GalleryPage({
+  gallery,
+  isLoggedIn,
+  isCreator,
+}: Readonly<{
+  gallery: GalleryView;
+  isLoggedIn: boolean;
+  isCreator: boolean;
+}>) {
   return (
     <div class="px-4">
       <div class="flex items-center justify-between my-4">
@@ -343,9 +496,12 @@ function GalleryPage(
             <h1 class="font-medium text-2xl">
               {(gallery.record as Gallery).title}
             </h1>
-            <p class="font-semibold text-zinc-900">
+            <a
+              href={profileLink(gallery)}
+              class="text-gray-600 hover:underline"
+            >
               @{gallery.creator.handle}
-            </p>
+            </a>
           </div>
           {(gallery.record as Gallery).description}
         </div>
@@ -375,8 +531,11 @@ function GalleryPage(
               hx-trigger="click"
               hx-target="#layout"
               hx-swap="afterbegin"
-              class="cursor-pointer"
+              class="cursor-pointer relative"
             >
+              {isLoggedIn && isCreator
+                ? <AltTextButton galleryUri={gallery.uri} cid={image.cid} />
+                : null}
               <img
                 src={image.fullsize}
                 alt={image.alt}
@@ -390,21 +549,19 @@ function GalleryPage(
   );
 }
 
-export function GalleryModal({
-  gallery,
-}: Readonly<{ gallery?: GalleryView | null }>) {
+function GalleryModal({ gallery }: Readonly<{ gallery?: GalleryView | null }>) {
   return (
     <div
-      id="modal"
+      id="gallery-modal"
       _="on closeModal remove me"
-      class="fixed top-0 bottom-0 right-0 left-0 flex items-center justify-center"
+      class="fixed top-0 bottom-0 right-0 left-0 flex items-center justify-center z-10"
     >
       <div
         _="on click trigger closeModal"
         class="absolute top-0 left-0 right-0 bottom-0 bg-black/80"
       >
       </div>
-      <div class="w-[400px] bg-white flex flex-col p-4 z-10 max-h-screen overflow-y-auto">
+      <div class="w-[400px] bg-white flex flex-col p-4 max-h-screen overflow-y-auto z-20">
         <h1 class="text-lg font-semibold text-center w-full mb-2">
           {gallery ? "Edit gallery" : "Create gallery"}
         </h1>
@@ -426,9 +583,7 @@ export function GalleryModal({
             ))}
           </div>
           <div class="mb-4 relative">
-            <label htmlFor="title" class="label">
-              Display Name
-            </label>
+            <label htmlFor="title">Display Name</label>
             <Input
               type="text"
               id="title"
@@ -438,9 +593,7 @@ export function GalleryModal({
             />
           </div>
           <div class="mb-4 relative">
-            <label htmlFor="description" class="label">
-              Description
-            </label>
+            <label htmlFor="description">Description</label>
             <Textarea
               id="description"
               name="description"
@@ -458,8 +611,19 @@ export function GalleryModal({
           hx-swap="beforeend"
           hx-encoding="multipart/form-data"
           hx-trigger="change from:#files"
+          hx-indicator="#form-indicator"
+          {...{
+            ["hx-on::after-request"]:
+              "this.reset(); document.getElementById('files').value = '';",
+          }}
         >
-          <Button variant="secondary" asChild>
+          <input
+            type="button"
+            name="galleryUri"
+            value={gallery?.uri}
+            class="hidden"
+          />
+          <Button variant="secondary" class="mb-2" asChild>
             <label class="w-full">
               Upload images
               <Input
@@ -472,32 +636,36 @@ export function GalleryModal({
               />
             </label>
           </Button>
-          <div id="image-preview" class="w-full h-full grid grid-cols-3 gap-2">
+          <div id="form-indicator" class="htmx-indicator">
+            Uploading... Please wait
+          </div>
+          <div id="image-preview" class="w-full h-full grid grid-cols-2 gap-2">
             {gallery?.images?.map((image) => (
               <ImagePreview key={image.cid} src={image.thumb} cid={image.cid} />
             ))}
           </div>
         </form>
         <form id="delete-form" hx-post={`/actions/delete?uri=${gallery?.uri}`}>
-          <input
-            type="hidden"
-            name="uri"
-            value={gallery?.uri}
-          />
+          <input type="hidden" name="uri" value={gallery?.uri} />
         </form>
         <div class="w-full flex flex-col gap-2 mt-2">
           {gallery
             ? (
-              <Button variant="secondary" form="delete-form" type="submit">
+              <Button variant="destructive" form="delete-form" type="submit">
                 Delete
               </Button>
             )
             : null}
+          <Button
+            variant="primary"
+            form="gallery-form"
+            type="submit"
+            id="submit-button"
+          >
+            Submit
+          </Button>
           <Button variant="secondary" _="on click trigger closeModal">
             Cancel
-          </Button>
-          <Button variant="primary" form="gallery-form" type="submit">
-            Submit
           </Button>
         </div>
       </div>
@@ -505,14 +673,12 @@ export function GalleryModal({
   );
 }
 
-function ImagePreview(
-  { src, cid }: Readonly<{ src: string; cid: string }>,
-) {
+function ImagePreview({ src, cid }: Readonly<{ src: string; cid: string }>) {
   return (
     <div class="relative">
       <button
         type="button"
-        class="bg-black z-10 absolute top-2 right-2 cursor-pointer size-4 flex items-center justify-center"
+        class="bg-black/80 z-10 absolute top-2 right-2 cursor-pointer size-4 flex items-center justify-center"
         _={`on click
           set input to <input[value='${cid}']/>
           if input exists
@@ -534,26 +700,96 @@ function ImagePreview(
   );
 }
 
-function ImageModal({ image }: Readonly<{
+function AltTextButton({
+  galleryUri,
+  cid,
+}: Readonly<{ galleryUri: string; cid: string }>) {
+  return (
+    <div
+      class="bg-black/80 py-[1px] px-[3px] absolute top-2 left-2 cursor-pointer flex items-center justify-center text-xs text-white font-semibold"
+      hx-get={`/modals/image-alt?galleryUri=${galleryUri}&imageCid=${cid}`}
+      hx-trigger="click"
+      hx-target="#layout"
+      hx-swap="afterbegin"
+      _="on click halt"
+    >
+      <i class="fas fa-plus text-[10px] mr-1"></i> ALT
+    </div>
+  );
+}
+
+function ImageModal({
+  image,
+}: Readonly<{
   image: ViewImage;
 }>) {
   return (
     <div
-      id="modal"
+      id="image-modal"
       _="on closeModal remove me"
-      class="fixed top-0 bottom-0 right-0 left-0 flex items-center justify-center"
+      class="fixed top-0 bottom-0 right-0 left-0 flex items-center justify-center z-10"
     >
       <div
         _="on click trigger closeModal"
         class="absolute top-0 left-0 right-0 bottom-0 bg-black/80"
       >
       </div>
-      <div class="flex flex-col max-w-5xl p-4 z-10">
-        <img
-          src={image.fullsize}
-          alt={image.alt}
-          class="w-full max-h-screen"
-        />
+      <div class="flex flex-col max-w-5xl p-4 z-20">
+        <img src={image.fullsize} alt={image.alt} class="w-full max-h-screen" />
+      </div>
+    </div>
+  );
+}
+
+function ImageAltModal({
+  image,
+  galleryUri,
+}: Readonly<{
+  image: ViewImage;
+  galleryUri: string;
+}>) {
+  return (
+    <div
+      id="image-alt-modal"
+      _="on closeModal remove me"
+      class="fixed top-0 bottom-0 right-0 left-0 flex items-center justify-center z-10"
+    >
+      <div
+        _="on click trigger closeModal"
+        class="absolute top-0 left-0 right-0 bottom-0 bg-black/80"
+      >
+      </div>
+      <div class="w-[400px] bg-white flex flex-col p-4 z-20 max-h-screen overflow-y-auto">
+        <h1 class="text-lg font-semibold text-center w-full mb-2">
+          Add alt text
+        </h1>
+        <div class="aspect-square relative bg-gray-100">
+          <img
+            src={image.fullsize}
+            alt={image.alt}
+            class="absolute inset-0 w-full h-full object-contain"
+          />
+        </div>
+        <form
+          hx-post="/actions/image-alt"
+          _="on htmx:afterOnLoad[successful] trigger closeModal"
+        >
+          <input type="hidden" name="galleryUri" value={galleryUri} />
+          <input type="hidden" name="cid" value={image.cid} />
+          <div class="my-2">
+            <label htmlFor="alt">Descriptive alt text</label>
+            <Textarea
+              id="alt"
+              name="alt"
+              rows={4}
+              defaultValue={image.alt}
+              placeholder="Alt text"
+            />
+          </div>
+          <Button type="submit" variant="primary" class="w-full">
+            Save
+          </Button>
+        </form>
       </div>
     </div>
   );
@@ -642,4 +878,29 @@ export function profileLink(gallery: GalleryView) {
 
 export function galleryLink(gallery: GalleryView) {
   return `/profile/${gallery.creator.handle}/${new AtUri(gallery.uri).rkey}`;
+}
+
+function mergeUniqueImages(
+  existingImages: Image[] | undefined,
+  newImages: Image[],
+  validCids?: string[],
+): Image[] {
+  if (!existingImages || existingImages.length === 0) {
+    return validCids
+      ? newImages.filter((img) => validCids.includes(img.image.ref.toString()))
+      : newImages;
+  }
+  const uniqueImagesMap = new Map<string, Image>();
+  existingImages.forEach((img) => {
+    const key = img.image.ref.toString();
+    uniqueImagesMap.set(key, img);
+  });
+  newImages.forEach((img) => {
+    const key = img.image.ref.toString();
+    uniqueImagesMap.set(key, img);
+  });
+  const mergedImages = [...uniqueImagesMap.values()];
+  return validCids
+    ? mergedImages.filter((img) => validCids.includes(img.image.ref.toString()))
+    : mergedImages;
 }

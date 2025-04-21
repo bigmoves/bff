@@ -43,5 +43,11 @@
       color: var(--tw-color-white);
       border: 1px solid var(--tw-color-sky-500);
     }
+
+    &.bff-btn-destructive {
+      background-color: var(--tw-color-red-500);
+      color: var(--tw-color-white);
+      border: 1px solid var(--tw-color-red-500);
+    }
   }
 }
