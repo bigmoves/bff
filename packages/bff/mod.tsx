@@ -20,8 +20,8 @@ import { Buffer } from "node:buffer";
 import { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, VNode } from "preact";
 import { render as renderToString } from "preact-render-to-string";
-import sharp from "sharp";
 import { Login } from "./components/Login.tsx";
+import { UnauthorizedError } from "./errors.ts";
 import { Jetstream } from "./jetstream.ts";
 import { CSS } from "./styles.ts";
 import type {
@@ -35,10 +35,16 @@ import type {
   HttpMethod,
   IndexService,
   OauthMiddlewareOptions,
+  ProcessImageQueuePayload,
   QueryOptions,
+  Queue,
+  QueueItem,
+  QueueItemResult,
+  QueuePayloads,
   RecordTable,
   RootProps,
   RouteHandler,
+  UploadBlobArgs,
 } from "./types.d.ts";
 import { hydrateBlobRefs } from "./utils.ts";
 
@@ -59,12 +65,17 @@ export type {
 
 export { CSS } from "./styles.ts";
 
+const TEMP_IMAGE_STORAGE = "./image_storage";
+
+const blobMetaCache = new TtlCache<string, BlobMeta>(1000 * 60 * 5); // 5 min
+
 export async function bff(opts: BffOptions) {
   const bffConfig = configureBff(opts);
   const db = createDb(bffConfig);
   const idxService = indexService(db);
   const oauthClient = createOauthClient(db, bffConfig);
-  const handler = createBffHandler(db, oauthClient, bffConfig);
+  const queue = await createQueue(oauthClient, blobMetaCache, bffConfig);
+  const handler = createBffHandler(db, oauthClient, queue, bffConfig);
   const jetstream = createSubscription(idxService, bffConfig);
 
   if (bffConfig.jetstreamUrl && bffConfig.collections?.length) {
@@ -81,11 +92,22 @@ export async function bff(opts: BffOptions) {
     onListen({ port, hostname }) {
       console.log(`Server started at http://${hostname}:${port}`);
     },
+    onError(err) {
+      if (err instanceof UnauthorizedError) {
+        return new Response("Unauthorized", {
+          status: 401,
+        });
+      }
+      return new Response("Internal Server Error", {
+        status: 500,
+      });
+    },
   }, handler);
 
   Deno.addSignalListener("SIGINT", () => {
     console.log("Shutting down...");
     jetstream.disconnect();
+    queue.close();
     Deno.exit(0);
   });
 }
@@ -98,6 +120,8 @@ function configureBff(cfg: BffOptions): BffConfig {
     port: Number(Deno.env.get("BFF_PORT")) || 8080,
     databaseUrl: cfg.databaseUrl ?? Deno.env.get("BFF_DATABASE_URL") ??
       ":memory:",
+    queueDatabaseUrl: Deno.env.get("BFF_QUEUE_DATABASE_URL") ??
+      "file::memory:?cache=shared",
     lexiconDir: Deno.env.get("BFF_LEXICON_DIR") ?? "__generated__",
     oauthScope: cfg.oauthScope ?? "atproto transition:generic",
     middlewares: cfg.middlewares ?? [],
@@ -146,8 +170,7 @@ const indexService = (db: Database): IndexService => {
     ) => {
       let query = `SELECT * FROM "record" WHERE collection = ?`;
       const params: string[] = [collection];
-
-      const tableColumns = ["did", "uri"];
+      const tableColumns = ["did", "uri", "indexedAt", "cid"];
 
       if (options?.where && options.where.length > 0) {
         options.where.forEach((condition) => {
@@ -194,27 +217,63 @@ const indexService = (db: Database): IndexService => {
         });
       }
 
-      if (options?.orderBy) {
-        const field = options.orderBy.field;
-        if (tableColumns.includes(field)) {
-          query += ` ORDER BY ${field}`;
-        } else {
-          query += ` ORDER BY JSON_EXTRACT(json, '$.${field}')`;
+      if (options?.cursor) {
+        try {
+          const decoded = Buffer.from(options.cursor, "base64").toString(
+            "utf-8",
+          );
+          const [cursorIndexedAt, cursorCid] = decoded.split("|");
+
+          const cursorDirection = options?.orderBy?.direction === "desc"
+            ? "<"
+            : ">";
+
+          query +=
+            ` AND (indexedAt ${cursorDirection} ? OR (indexedAt = ? AND cid ${cursorDirection} ?))`;
+          params.push(cursorIndexedAt, cursorIndexedAt, cursorCid);
+        } catch (error) {
+          console.warn("Invalid cursor format", error);
         }
-        query += ` ${options.orderBy.direction || "asc"}`;
+      }
+
+      const orderField = options?.orderBy?.field || "indexedAt";
+      const orderDirection = options?.orderBy?.direction || "asc";
+
+      if (tableColumns.includes(orderField)) {
+        query += ` ORDER BY ${orderField} ${orderDirection}`;
+        query += `, cid ${orderDirection}`;
+      } else {
+        query +=
+          ` ORDER BY JSON_EXTRACT(json, '$.${orderField}') ${orderDirection}`;
+        query += `, cid ${orderDirection}`;
+      }
+
+      if (options?.limit && options.limit > 0) {
+        query += ` LIMIT ?`;
+        params.push(options.limit.toString());
       }
 
       const rows = db.prepare(query).all(...params) as RecordTable[];
 
-      return rows.map(
-        (r) => ({
-          uri: r.uri,
-          cid: r.cid,
-          did: r.did,
-          indexedAt: r.indexedAt,
-          ...hydrateBlobRefs(JSON.parse(r.json)),
-        } as T),
-      );
+      let nextCursor: string | undefined;
+      if (rows.length > 0) {
+        const lastRow = rows[rows.length - 1];
+        const rawCursor = `${lastRow.indexedAt}|${lastRow.cid}`;
+        nextCursor = Buffer.from(rawCursor, "utf-8").toString("base64");
+      }
+
+      return {
+        items: rows.map(
+          (r) => ({
+            uri: r.uri,
+            cid: r.cid,
+            did: r.did,
+            indexedAt: r.indexedAt,
+            ...hydrateBlobRefs(JSON.parse(r.json)),
+          } as T),
+        ),
+        cursor: nextCursor,
+      };
     },
     getRecord: <T extends Record<string, unknown>>(
       uri: string,
@@ -284,20 +343,20 @@ const indexService = (db: Database): IndexService => {
 function createBffHandler(
   db: Database,
   oauthClient: AtprotoOAuthClient,
+  queue: Queue,
   cfg: BffConfig,
 ) {
   const inner = handler;
-  const withMiddlewares = composeMiddlewares(db, oauthClient, cfg);
+  const withMiddlewares = composeMiddlewares(db, oauthClient, queue, cfg);
   return function handler(req: Request, connInfo: Deno.ServeHandlerInfo) {
     return withMiddlewares(req, connInfo, inner);
   };
 }
 
-const blobMetaCache = new TtlCache<string, BlobMeta>(1000 * 60 * 5); // 5 min
-
 function composeMiddlewares(
   db: Database,
   oauthClient: AtprotoOAuthClient,
+  queue: Queue,
   cfg: BffConfig,
 ) {
   return async (
@@ -334,6 +393,7 @@ function composeMiddlewares(
     const deleteRecordFn = deleteRecord(agent, idxService);
     const backfillCollectionsFn = backfillCollections(idxService);
     const backfillUrisFn = backfillUris(idxService);
+    const uploadBlobFn = uploadBlob(queue, agent, blobMetaCache);
 
     const ctx: BffContext = {
       state: {},
@@ -346,6 +406,7 @@ function composeMiddlewares(
       deleteRecord: deleteRecordFn,
       backfillCollections: backfillCollectionsFn,
       backfillUris: backfillUrisFn,
+      uploadBlob: uploadBlobFn,
       didResolver,
       render: () => new Response(),
       html: html(),
@@ -664,13 +725,14 @@ function render(ctx: BffContext, cfg: BffConfig) {
 }
 
 function html() {
-  return (vnode: VNode) => {
+  return (vnode: VNode, headers?: Record<string, string>) => {
     const str = renderToString(vnode);
     return new Response(
       `<!DOCTYPE html>${str}`,
       {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
+          ...headers,
         },
       },
     );
@@ -1042,133 +1104,223 @@ export function route(
   };
 }
 
-export function uploadHandler(
-  cb: (blobMeta: BlobMeta[]) => VNode,
-  options?: {
-    compress: boolean;
-  },
-): RouteHandler {
-  return async (req, _params, ctx) => {
-    const formData = await req.formData();
-    const file = formData.get("file") as File;
-    const files = formData.getAll("files") as File[];
+export const uploadBlob = (
+  queue: Queue,
+  agent: Agent | undefined,
+  blobMetaCache: TtlCache<string, BlobMeta>,
+) => {
+  return ({ file, dataUrl, opts }: UploadBlobArgs) => {
+    const uploadId = crypto.randomUUID();
 
-    if (!ctx.agent) {
-      return new Response("Agent not initialized", { status: 500 });
+    blobMetaCache.set(uploadId, {
+      dataUrl,
+    });
+
+    if (!agent) {
+      throw new Error("Agent not initialized");
     }
 
-    if (!file && !files.length) {
-      return new Response("No files provided", { status: 400 });
+    if (!file) {
+      throw new Error("No files provided");
     }
 
-    const filesToUpload = file ? [file] : files;
-    const blobMetas: BlobMeta[] = [];
+    enqueueImage({
+      queue,
+      did: agent.assertDid,
+      file,
+      uploadId,
+      opts,
+    });
 
-    for (const file of filesToUpload) {
-      let processedFile = file;
+    return uploadId.toString();
+  };
+};
 
-      if (options?.compress) {
-        try {
-          processedFile = await compressImage(file);
-        } catch (error) {
-          console.error("Error compressing image:", error);
-          return new Response("Failed to compress image", { status: 500 });
-        }
-      }
+async function enqueueImage({
+  queue,
+  did,
+  file,
+  uploadId,
+  opts,
+}: {
+  queue: Queue;
+  did: string;
+  file: File;
+  uploadId: string;
+  opts?: {
+    compress?: boolean;
+  };
+}) {
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
 
-      const blobResponse = await ctx.agent.uploadBlob(processedFile);
+  console.log(
+    "Input buffer size:",
+    (buffer.byteLength / 1024 / 1024).toFixed(2) + " Mb",
+  );
 
-      if (!blobResponse) {
-        return new Response("Failed to upload blob", { status: 500 });
-      }
+  const tempImagePath = join(
+    Deno.cwd(),
+    TEMP_IMAGE_STORAGE,
+  );
+  const imagePath = join(tempImagePath, uploadId);
+  await Deno.mkdir(tempImagePath, { recursive: true });
+  await Deno.writeFile(
+    imagePath,
+    buffer,
+  );
 
-      let dimensions: { width?: number; height?: number } | undefined;
-      try {
-        dimensions = await getImageDimensions(file);
-      } catch (error) {
-        console.error("Error getting image dimensions:", error);
-      }
+  const payload: ProcessImageQueuePayload = {
+    type: "process_image",
+    data: {
+      uploadId,
+      did,
+      imagePath,
+      opts,
+    },
+  };
 
-      const cid = blobResponse.data.blob.ref.toString();
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const base64 = btoa(
-        new Uint8Array(buffer).reduce(function (data, byte) {
-          return data + String.fromCharCode(byte);
-        }, ""),
-      );
-      const dataUrl =
-        `data:${blobResponse.data.blob.mimeType};base64,${base64}`;
-      const blobMeta: BlobMeta = {
-        blobRef: blobResponse.data.blob,
-        dataUrl,
-        dimensions,
-      };
-      ctx.blobMetaCache.set(cid, blobMeta);
-      blobMetas.push(blobMeta);
-    }
-    return ctx.html(
-      cb(blobMetas),
-    );
+  await queue.enqueue(payload);
+
+  return {
+    uploadId,
+    imagePath,
   };
 }
 
-async function getImageDimensions(file: File) {
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const metadata = await sharp(buffer).metadata();
-    const { width, height } = metadata;
-    return { width, height };
-  } catch (error) {
-    console.error("Error getting image dimensions:", error);
-    throw error;
+async function handleBlobAfterProcessing(
+  oauthClient: AtprotoOAuthClient,
+  blobMetaCache: TtlCache<string, BlobMeta>,
+  result: QueueItemResult,
+) {
+  const oauthSession = await oauthClient.restore(result.did);
+  const agent = new Agent(oauthSession);
+
+  const buffer = await Deno.readFile(result.imagePath);
+
+  console.log(
+    "Output buffer size:",
+    (buffer.byteLength / 1024 / 1024).toFixed(2) + " MB",
+  );
+
+  const blobResponse = await agent.uploadBlob(buffer);
+
+  if (!blobResponse) {
+    throw new Error("Failed to upload blob");
   }
+
+  await Deno.remove(result.imagePath);
+
+  const cid = blobResponse.data.blob.ref.toString();
+
+  const existingBlobMeta = blobMetaCache.get(result.uploadId);
+  const newBlobMeta = {
+    ...existingBlobMeta,
+    blobRef: blobResponse.data.blob,
+    dimensions: result.dimensions,
+  };
+
+  // Adding two entries to the cache
+  // 1. One for the uploadId to be used to track the upload
+  // 2. One for the cid to be used when creating/updating a record
+  blobMetaCache.set(result.uploadId, newBlobMeta);
+  blobMetaCache.set(cid, newBlobMeta);
 }
 
-async function compressImage(file: File): Promise<File> {
-  const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
-  const TARGET_WIDTH = 1200;
-  let quality = 90;
+function createWorker() {
+  const worker = new Worker(
+    new URL("./worker.ts", import.meta.url).href,
+    {
+      type: "module",
+    },
+  );
+  return worker;
+}
 
-  const arrayBuffer = await file.arrayBuffer();
-  const fileBuffer = Buffer.from(arrayBuffer);
+async function createQueue(
+  oauthClient: AtprotoOAuthClient,
+  blobMetaCache: TtlCache<string, BlobMeta>,
+  cfg: BffConfig,
+) {
+  const kv = await Deno.openKv(cfg.queueDatabaseUrl);
+  let workerProcessing = false;
 
-  let buffer = await sharp(fileBuffer)
-    .autoOrient()
-    .resize({ width: TARGET_WIDTH, withoutEnlargement: true })
-    .webp({ quality })
-    .toBuffer();
+  kv.listenQueue(async (message: QueuePayloads) => {
+    if (message.type !== "process_image") return;
+    const now = new Date();
+    const { data } = message;
 
-  if (buffer.length <= MAX_FILE_SIZE) {
-    const blob = new Blob([buffer], { type: "image/webp" });
-    return new File([blob], file.name, { type: "image/webp" });
+    const queueItem: QueueItem = {
+      id: data.uploadId,
+      did: data.did,
+      imagePath: data.imagePath,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await kv.set(["imageQueue", queueItem.id], queueItem);
+    await kv.set([
+      "imageQueueIndex",
+      "pending",
+      now.toISOString(),
+      queueItem.id,
+    ], queueItem.id);
+
+    console.log(`Image enqueued with ID: ${queueItem.id}`);
+
+    ensureWorkerIsRunning();
+  });
+
+  const ensureWorkerIsRunning = () => {
+    if (workerProcessing) return;
+    workerProcessing = true;
+
+    const worker = createWorker();
+
+    worker.onmessage = (e) => {
+      const { type, id, result, error } = e.data;
+      if (type === "complete") {
+        console.log(`Worker completed processing image ${id}`);
+        handleBlobAfterProcessing(oauthClient, blobMetaCache, result);
+      } else if (type === "error") {
+        console.error(
+          `Worker encountered an error processing image ${id}:`,
+          error,
+        );
+      } else if (type === "shutdown") {
+        workerProcessing = false;
+        worker.terminate();
+        console.log("Worker shut down due to empty queue");
+      }
+    };
+
+    worker.onerror = (error) => {
+      console.error("Worker error:", error);
+      workerProcessing = false;
+    };
+
+    worker.postMessage({ command: "start", databaseUrl: cfg.queueDatabaseUrl });
+
+    console.log("Image processor worker started");
+  };
+
+  return {
+    enqueue: async (payload: QueuePayloads) => {
+      await kv.enqueue(payload);
+    },
+    close: () => {
+      kv.close();
+    },
+  } as Queue;
+}
+
+export function requireAuth<T>(
+  ctx: BffContext<T>,
+): asserts ctx is BffContext<T> & {
+  currentUser: NonNullable<BffContext["currentUser"]>;
+} {
+  if (!ctx.currentUser) {
+    throw new UnauthorizedError("User not authenticated");
   }
-
-  let minQuality = 10;
-  let maxQuality = 75;
-
-  while (minQuality <= maxQuality) {
-    quality = Math.floor((minQuality + maxQuality) / 2);
-
-    buffer = await sharp(fileBuffer)
-      .autoOrient()
-      .resize({ width: TARGET_WIDTH, withoutEnlargement: true })
-      .webp({ quality })
-      .toBuffer();
-
-    if (buffer.length <= MAX_FILE_SIZE) {
-      minQuality = quality + 1; // Try to find higher quality that fits
-    } else {
-      maxQuality = quality - 1; // Need lower quality
-    }
-  }
-
-  buffer = await sharp(fileBuffer)
-    .autoOrient()
-    .resize({ width: TARGET_WIDTH, withoutEnlargement: true })
-    .webp({ quality: maxQuality })
-    .toBuffer();
-
-  const blob = new Blob([buffer], { type: "image/webp" });
-  return new File([blob], file.name, { type: "image/webp" });
 }

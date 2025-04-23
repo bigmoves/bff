@@ -1,17 +1,12 @@
 import type { JSX } from "preact";
 import { cn } from "./utils.ts";
 
-type Props =
-  & JSX.InputHTMLAttributes<HTMLInputElement>
-  & Readonly<{
-    variant?: "hidden";
-  }>;
+export type InputProps = JSX.InputHTMLAttributes<HTMLInputElement>;
 
-export function Input(props: Props): JSX.Element {
-  const { variant, class: classProp, ...rest } = props;
+export function Input(props: InputProps): JSX.Element {
+  const { class: classProp, ...rest } = props;
   const className = cn(
     "bff-input",
-    variant === "hidden" ? "hidden" : "",
     classProp,
   );
   return <input class={className} {...rest} />;

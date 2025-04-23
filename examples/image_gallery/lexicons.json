@@ -1,8 +1,0 @@
-{
-  "lexicons": [
-    "app.feed.post",
-    "app.bsky.feed.post",
-    "app.bsky.actor.profile",
-    "app.bsky.actor.defs"
-  ]
-}

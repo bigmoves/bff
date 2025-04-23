@@ -27,7 +27,7 @@ bff({
   },
   middlewares: [
     route("/", (_req, _params, ctx) => {
-      const entries = ctx.indexService.getRecords<Entry>(
+      const results = ctx.indexService.getRecords<Entry>(
         "com.whtwnd.blog.entry",
         { orderBy: { field: "createdAt", direction: "asc" } },
       );
@@ -42,7 +42,7 @@ bff({
       return ctx.render(
         <main>
           <h1>Blog</h1>
-          {entries.map((entry) => {
+          {results.items.map((entry) => {
             return (
               <ul key={entry.uri}>
                 <li>

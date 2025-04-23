@@ -3,14 +3,15 @@ import { Button } from "./Button.tsx";
 import { Input } from "./Input.tsx";
 import { cn } from "./utils.ts";
 
-type Props =
+export type LoginProps =
   & JSX.HTMLAttributes<HTMLFormElement>
   & Readonly<{
     error?: string;
+    errorClass?: string;
   }>;
 
 export function Login(
-  { error, ...rest }: Props,
+  { error, errorClass, ...rest }: LoginProps,
 ): JSX.Element {
   return (
     <form
@@ -44,7 +45,13 @@ export function Login(
         Login with AT Protocol
       </Button>
       <div className="tw:h-4">
-        {error ? <div className="tw:text-sm tw:font-mono">{error}</div> : null}
+        {error
+          ? (
+            <div className={cn("tw:text-sm tw:font-mono", errorClass)}>
+              {error}
+            </div>
+          )
+          : null}
       </div>
     </form>
   );

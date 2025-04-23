@@ -58,6 +58,7 @@
     "npm:marked@12": "12.0.2",
     "npm:multiformats@*": "13.3.2",
     "npm:multiformats@^13.3.2": "13.3.2",
+    "npm:popmotion@^11.0.5": "11.0.5",
     "npm:preact-render-to-string@^6.5.13": "6.5.13_preact@10.26.5",
     "npm:preact@^10.26.5": "10.26.5",
     "npm:prismjs@^1.29.0": "1.30.0",
@@ -399,19 +400,19 @@
       "integrity": "sha512-4JFstCTaToCFrPqrGzgkF8N2NHjtsaY4uRh6brZQ5L9e4wbMieX8oDT8N7qfVFTQecHFEtkj4ve49VIZ3mKVqw==",
       "dependencies": [
         "@emnapi/wasi-threads",
-        "tslib"
+        "tslib@2.8.1"
       ]
     },
     "@emnapi/runtime@1.4.1": {
       "integrity": "sha512-LMshMVP0ZhACNjQNYXiU1iZJ6QCcv0lUdPDPugqGvCGXt5xtRVBPdtA0qU12pEXZzpWAhWlZYptfdAFq10DOVQ==",
       "dependencies": [
-        "tslib"
+        "tslib@2.8.1"
       ]
     },
     "@emnapi/wasi-threads@1.0.1": {
       "integrity": "sha512-iIBu7mwkq4UQGeMEM8bLwNK962nXdhodeScX4slfQnRhEMMzvYivHhutCIk8uojvmASXXPC2WNEjwxFWk72Oqw==",
       "dependencies": [
-        "tslib"
+        "tslib@2.8.1"
       ]
     },
     "@img/sharp-darwin-arm64@0.34.1": {
@@ -697,7 +698,7 @@
         "@emnapi/wasi-threads",
         "@napi-rs/wasm-runtime",
         "@tybys/wasm-util",
-        "tslib"
+        "tslib@2.8.1"
       ]
     },
     "@tailwindcss/oxide-win32-arm64-msvc@4.1.3": {
@@ -766,7 +767,7 @@
     "@tybys/wasm-util@0.9.0": {
       "integrity": "sha512-6+7nlbMVX/PVDCwaIQ8nTOPveOcFLSt8GcXdx8hD0bt39uWxYT88uXzqTd4fTvqta7oeUJqudepapKNt2DYJFw==",
       "dependencies": [
-        "tslib"
+        "tslib@2.8.1"
       ]
     },
     "@types/node@22.12.0": {
@@ -1115,6 +1116,12 @@
     "forwarded@0.2.0": {
       "integrity": "sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow=="
     },
+    "framesync@6.1.2": {
+      "integrity": "sha512-jBTqhX6KaQVDyus8muwZbBeGGP0XgujBRbQ7gM7BRdS3CadCZIHiawyzYLnafYcvZIh5j8WE7cxZKFn7dXhu9g==",
+      "dependencies": [
+        "tslib@2.4.0"
+      ]
+    },
     "fresh@0.5.2": {
       "integrity": "sha512-zJ2mQYM18rEFOudeV4GShTGIQ7RbzA7ozbU9I/XBpm7kqgMywgmylMwXHxZJmkVoYkna9d2pVXVXPdYTP9ej8Q=="
     },
@@ -1169,6 +1176,9 @@
     },
     "he@1.2.0": {
       "integrity": "sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw=="
+    },
+    "hey-listen@1.0.8": {
+      "integrity": "sha512-COpmrF2NOg4TBWUJ5UVyaCU2A88wEMkUPK4hNqyCkqHbxT92BbvfjoSozkAIIm6XhicGlJHhFdullInrdhwU8Q=="
     },
     "htmlparser2@8.0.2": {
       "integrity": "sha512-GYdjWKDkbRLkZ5geuHs5NY1puJ+PXwP7+fHPRz06Eirsb9ugf6d8kkXav6ADhcODhFFPMIXyxkxSuMf3D6NCFA==",
@@ -1452,6 +1462,15 @@
         "thread-stream"
       ]
     },
+    "popmotion@11.0.5": {
+      "integrity": "sha512-la8gPM1WYeFznb/JqF4GiTkRRPZsfaj2+kCxqQgr2MJylMmIKUwBfWW8Wa5fml/8gmtlD5yI01MP1QCZPWmppA==",
+      "dependencies": [
+        "framesync",
+        "hey-listen",
+        "style-value-types",
+        "tslib@2.4.0"
+      ]
+    },
     "postcss-selector-parser@6.0.10": {
       "integrity": "sha512-IQ7TZdoaqbT+LCpShg46jnZVlhWD2w6iQYAcYXfHARZ7X1t/UGhhceQDs5X0cGqKvYlHNOuv7Oa1xmb0oQuA3w==",
       "dependencies": [
@@ -1685,6 +1704,13 @@
         "safe-buffer"
       ]
     },
+    "style-value-types@5.1.2": {
+      "integrity": "sha512-Vs9fNreYF9j6W2VvuDTP7kepALi7sk0xtk2Tu8Yxi9UoajJdEVpNpCov0HsLTqXvNGKX+Uv09pkozVITi1jf3Q==",
+      "dependencies": [
+        "hey-listen",
+        "tslib@2.4.0"
+      ]
+    },
     "supports-color@7.2.0": {
       "integrity": "sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==",
       "dependencies": [
@@ -1734,6 +1760,9 @@
         "@ts-morph/common",
         "code-block-writer"
       ]
+    },
+    "tslib@2.4.0": {
+      "integrity": "sha512-d6xOpEDfsi2CZVlPQzGeux8XMwLT9hssAsaPYExaQMuYskwb+x1x7J371tWlbBdWHroy99KnVB6qIkUbs5X3UQ=="
     },
     "tslib@2.8.1": {
       "integrity": "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="
@@ -1805,16 +1834,6 @@
           "npm:@tailwindcss/cli@^4.0.12",
           "npm:preact@^10.26.5",
           "npm:tailwindcss@^4.0.12",
-          "npm:typed-htmx@~0.3.1"
-        ]
-      },
-      "examples/image_gallery": {
-        "dependencies": [
-          "npm:@atproto/syntax@0.4",
-          "npm:@tailwindcss/cli@^4.1.4",
-          "npm:date-fns@^4.1.0",
-          "npm:preact@^10.26.5",
-          "npm:tailwindcss@^4.1.4",
           "npm:typed-htmx@~0.3.1"
         ]
       },

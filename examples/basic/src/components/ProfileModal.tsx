@@ -35,7 +35,7 @@ export function ProfileModal(
         <form
           hx-post="/profile"
           hx-swap="none"
-          _="on htmx:afterOnLoad[successful] trigger closeModal"
+          _="on htmx:afterOnLoad trigger closeModal"
         >
           <div id="image-input">
             <input

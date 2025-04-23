@@ -31,7 +31,7 @@ bff({
           [actor.did],
           ["app.bsky.feed.like"],
         );
-        const likes = ctx.indexService.getRecords<WithBffMeta<Like>>(
+        const { items: likes } = ctx.indexService.getRecords<WithBffMeta<Like>>(
           "app.bsky.feed.like",
         );
         // posts
@@ -57,7 +57,7 @@ bff({
         return ctx.redirect("/login");
       }
 
-      const likes = ctx.indexService.getRecords<WithBffMeta<Like>>(
+      const { items: likes } = ctx.indexService.getRecords<WithBffMeta<Like>>(
         "app.bsky.feed.like",
         {
           orderBy: { field: "createdAt", direction: "desc" },
@@ -65,7 +65,9 @@ bff({
         },
       );
 
-      const profiles = ctx.indexService.getRecords<WithBffMeta<Profile>>(
+      const { items: profiles } = ctx.indexService.getRecords<
+        WithBffMeta<Profile>
+      >(
         "app.bsky.actor.profile",
         {
           where: [{
@@ -77,10 +79,10 @@ bff({
 
       const postUris = likes.map((l) => l.subject.uri.toString());
 
-      let posts = [];
+      let posts: WithBffMeta<Post>[] = [];
 
       if (search) {
-        posts = ctx.indexService.getRecords<WithBffMeta<Post>>(
+        const results = ctx.indexService.getRecords<WithBffMeta<Post>>(
           "app.bsky.feed.post",
           {
             where: [
@@ -89,13 +91,15 @@ bff({
             ],
           },
         );
+        posts = results.items;
       } else {
-        posts = ctx.indexService.getRecords<WithBffMeta<Post>>(
+        const results = ctx.indexService.getRecords<WithBffMeta<Post>>(
           "app.bsky.feed.post",
           {
             where: [{ field: "uri", in: postUris }],
           },
         );
+        posts = results.items;
       }
 
       const profilesByDid = new Map(

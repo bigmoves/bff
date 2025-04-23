@@ -40,7 +40,7 @@ bff({
       },
     }),
     route("/", async (_req, _params, ctx) => {
-      const repos = ctx.indexService.getRecords<WithBffMeta<Repo>>(
+      const { items: repos } = ctx.indexService.getRecords<WithBffMeta<Repo>>(
         "sh.tangled.repo",
         {
           orderBy: {
@@ -104,7 +104,7 @@ bff({
         return ctx.redirect("/login");
       }
 
-      const stars = ctx.indexService.getRecords<WithBffMeta<Star>>(
+      const { items: stars } = ctx.indexService.getRecords<WithBffMeta<Star>>(
         "sh.tangled.feed.star",
         {
           where: [{
@@ -286,7 +286,7 @@ async function getReposWithActorAndTrees(
     const userDid = ctx.currentUser?.did;
     let stars: Star[] = [];
     if (userDid) {
-      stars = ctx.indexService.getRecords(
+      const results = ctx.indexService.getRecords(
         "sh.tangled.feed.star",
         {
           where: [
@@ -298,6 +298,7 @@ async function getReposWithActorAndTrees(
           ],
         },
       );
+      results.items = stars;
     }
     const starred = Boolean(stars[0]);
     const actor = ctx.indexService.getActor(repo.did);

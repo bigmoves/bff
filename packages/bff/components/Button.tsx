@@ -1,14 +1,14 @@
 import { cloneElement, type JSX } from "preact";
 import { cn } from "./utils.ts";
 
-type Props =
+export type ButtonProps =
   & JSX.ButtonHTMLAttributes<HTMLButtonElement>
   & Readonly<{
     variant?: "primary" | "secondary" | "destructive";
     asChild?: boolean;
   }>;
 
-export function Button(props: Props): JSX.Element {
+export function Button(props: ButtonProps): JSX.Element {
   const { variant, class: classProp, asChild, children, ...rest } = props;
   const className = cn(
     "bff-btn",

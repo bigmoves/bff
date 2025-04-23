@@ -7,7 +7,7 @@ export function AvatarOob({ blobRef, dataUrl }: Readonly<BlobMeta>) {
         <input
           type="hidden"
           name="avatarCid"
-          value={blobRef.ref.toString()}
+          value={blobRef?.ref.toString()}
         />
       </div>
       <img

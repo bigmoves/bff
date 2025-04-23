@@ -92,6 +92,7 @@ export type BffConfig = BffOptions & EnvConfig & {
    * @default ":memory:"
    */
   databaseUrl: string;
+  queueDatabaseUrl: string;
   oauthScope: string;
   rootElement: RootElement;
 };
@@ -104,13 +105,15 @@ export type QueryOptions = {
   where?: Array<
     { field: string; equals?: string; contains?: string; in?: string[] }
   >;
+  limit?: number;
+  cursor?: string;
 };
 
 export type IndexService = {
   getRecords: <T extends Record<string, unknown>>(
     collection: string,
     opts?: QueryOptions,
-  ) => T[];
+  ) => { items: T[]; cusor?: string };
   getRecord: <T extends Record<string, unknown>>(
     uri: string,
   ) => T | undefined;
@@ -123,18 +126,23 @@ export type IndexService = {
 };
 
 type BlobMeta = {
-  blobRef: BlobRef;
-  dataUrl: string;
+  dataUrl?: string;
+  blobRef?: BlobRef;
   dimensions?: {
     width?: number;
     height?: number;
   };
 };
 
-type backfillReposFn = (
-  repos: string[],
-  collections?: string[],
-) => Promise<void>;
+type UploadBlobOptions = {
+  compress?: boolean;
+};
+
+export type UploadBlobArgs = {
+  file: File;
+  dataUrl?: string;
+  opts?: UploadBlobOptions;
+};
 
 export type BffContext<State = Record<string, unknown>> = {
   state: State;
@@ -159,13 +167,14 @@ export type BffContext<State = Record<string, unknown>> = {
   backfillUris: (
     uris: string[],
   ) => Promise<void>;
+  uploadBlob: (params: UploadBlobArgs) => string;
   indexService: IndexService;
   oauthClient: AtprotoOAuthClient;
   currentUser?: ActorTable;
   cfg: BffConfig;
   next: () => Promise<Response>;
   render: (children: ComponentChildren) => Response;
-  html: (vnode: VNode) => Response;
+  html: (vnode: VNode, headers?: Record<string, string>) => Response;
   redirect: (url: string) => Response;
 };
 
@@ -202,3 +211,45 @@ export type RouteHandler = (
   params: Record<string, string>,
   ctx: BffContext,
 ) => Promise<Response> | Response;
+
+type QueuePayload = { type: string; data: unknown };
+
+export type ProcessImageQueuePayload = QueuePayload & {
+  type: "process_image";
+  data: {
+    uploadId: string;
+    did: string;
+    imagePath: string;
+    opts?: {
+      compress?: boolean;
+    };
+  };
+};
+
+export type QueuePayloads = ProcessImageQueuePayload;
+
+type QueueItemResult = {
+  uploadId: string;
+  did: string;
+  imagePath: string;
+  dimensions: {
+    width?: number;
+    height?: number;
+  };
+};
+
+type QueueItem = {
+  id: string;
+  did: string;
+  imagePath: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  result?: QueueItemResult;
+  error?: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type Queue = {
+  enqueue: (payload: QueuePayloads) => Promise<void>;
+  close: () => Promise<void>;
+};

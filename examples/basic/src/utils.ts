@@ -13,24 +13,28 @@ export async function onSignedIn({
     "app.bsky.actor.profile",
   ]);
 
-  const [profile] = ctx.indexService.getRecords<ProfileRecord>(
+  const profileResults = ctx.indexService.getRecords<ProfileRecord>(
     "dev.fly.bffbasic.profile",
     {
       where: [{ field: "did", equals: actor.did }],
     },
   );
 
+  const profile = profileResults.items[0];
+
   if (profile) {
     console.log("Profile already exists");
     return `/profile/${actor.handle}`;
   }
 
-  const [bskyProfile] = ctx.indexService.getRecords<BskyProfileRecord>(
+  const bskyProfileResults = ctx.indexService.getRecords<BskyProfileRecord>(
     "app.bsky.actor.profile",
     {
       where: [{ field: "did", equals: actor.did }],
     },
   );
+
+  const bskyProfile = bskyProfileResults.items[0];
 
   if (!bskyProfile) {
     console.error("Failed to get profile");

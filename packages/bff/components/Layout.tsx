@@ -50,9 +50,7 @@ const LayoutNav: FunctionalComponent<LayoutNavProps> = ({ title, profile }) => {
     <nav class="tw:w-full tw:border-b tw:border-slate-950 tw:flex tw:justify-between tw:items-center tw:px-4 tw:h-14">
       <div class="tw:flex tw:items-center tw:space-x-4">
         <a href="/">
-          <h1 class="tw:text-2xl tw:font-semibold">
-            {title}
-          </h1>
+          {title}
         </a>
       </div>
       <div class="tw:space-x-2">

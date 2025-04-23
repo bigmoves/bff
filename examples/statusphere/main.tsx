@@ -24,7 +24,7 @@ bff({
     route("/", async (_req, _params, ctx) => {
       let profile = undefined;
       const currentUser = ctx.currentUser;
-      const statuses = ctx.indexService.getRecords<Status>(
+      const { items: statuses } = ctx.indexService.getRecords<Status>(
         "xyz.statusphere.status",
       );
 
