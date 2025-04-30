@@ -14,7 +14,7 @@ type DialogTitleProps = {
   children: preact.ComponentChildren;
 };
 
-type DialogCloseProps = {
+type DialogCloseProps = JSX.HTMLAttributes<HTMLDivElement> & {
   children: preact.ComponentChildren;
 };
 
