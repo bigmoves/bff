@@ -1104,12 +1104,12 @@ export function route(
   };
 }
 
-export const uploadBlob = (
+const uploadBlob = (
   queue: Queue,
   agent: Agent | undefined,
   blobMetaCache: TtlCache<string, BlobMeta>,
 ) => {
-  return ({ file, dataUrl, opts }: UploadBlobArgs) => {
+  return ({ file, dataUrl, opts }: UploadBlobArgs): string => {
     const uploadId = crypto.randomUUID();
 
     blobMetaCache.set(uploadId, {

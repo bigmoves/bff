@@ -1,3 +1,5 @@
+import type { JSX } from "preact";
+
 export type MetaProps = {
   title?: string;
   property?: string;
@@ -5,7 +7,9 @@ export type MetaProps = {
   name?: string;
 };
 
-export function Meta({ meta = [] }: Readonly<{ meta?: MetaProps[] }>) {
+export function Meta(
+  { meta = [] }: Readonly<{ meta?: MetaProps[] }>,
+): JSX.Element {
   return (
     <>
       {meta.map((m) => {

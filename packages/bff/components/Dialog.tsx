@@ -1,22 +1,22 @@
 import type { FunctionalComponent, JSX } from "preact";
-import { Button, type ButtonProps } from "./Button.tsx";
+import { Button } from "./Button.tsx";
 import { cn } from "./utils.ts";
 
-interface DialogProps extends JSX.HTMLAttributes<HTMLDivElement> {
+type DialogProps = JSX.HTMLAttributes<HTMLDivElement> & { _?: string } & {
   children: preact.ComponentChildren;
-}
+};
 
-interface DialogContentProps extends JSX.HTMLAttributes<HTMLDivElement> {
+type DialogContentProps = JSX.HTMLAttributes<HTMLDivElement> & {
   children: preact.ComponentChildren;
-}
+};
 
-interface DialogTitleProps {
+type DialogTitleProps = {
   children: preact.ComponentChildren;
-}
+};
 
-interface DialogCloseProps extends ButtonProps {
+type DialogCloseProps = {
   children: preact.ComponentChildren;
-}
+};
 
 const _closeOnClick = "on click trigger closeDialog";
 
@@ -32,26 +32,32 @@ const Dialog: FunctionalComponent<DialogProps> & {
         "tw:fixed tw:top-0 tw:bottom-0 tw:right-0 tw:left-0 tw:flex tw:items-center tw:justify-center tw:z-10",
         classProp,
       )}
-      _={`on closeDialog
-          remove me
-          remove .tw:pointer-events-none from document.body
-          remove [@data-scroll-locked] from document.body
-        on keyup[key is 'Escape'] from <body/> trigger closeDialog
-        init
-          add .tw:pointer-events-none to document.body
-          add .tw:pointer-events-auto to me
-          add [@data-scroll-locked=true] to document.body
-        ${_}`}
+      {...{
+        _: `on closeDialog
+              remove me
+              remove .tw:pointer-events-none from document.body
+              remove [@data-scroll-locked] from document.body
+            on keyup[key is 'Escape'] from <body/> trigger closeDialog
+            init
+              add .tw:pointer-events-none to document.body
+              add .tw:pointer-events-auto to me
+              add [@data-scroll-locked=true] to document.body
+            ${_}`,
+      }}
       {...props}
     >
       <div
         class="tw:absolute tw:top-0 tw:left-0 tw:right-0 tw:bottom-0 tw:bg-black/80"
-        _={_closeOnClick}
+        {...{
+          _: _closeOnClick,
+        }}
       />
       <button
         type="button"
         class="tw:absolute tw:top-4 tw:right-4 tw:h-4 tw:w-4 tw:cursor-pointer z-30"
-        _={_closeOnClick}
+        {...{
+          _: _closeOnClick,
+        }}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -95,7 +101,12 @@ const DialogClose: FunctionalComponent<DialogTitleProps> = (
   { children, ...props },
 ) => {
   return (
-    <Button _={_closeOnClick} {...props}>
+    <Button
+      {...{
+        _: _closeOnClick,
+      }}
+      {...props}
+    >
       {children}
     </Button>
   );
