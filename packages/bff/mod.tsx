@@ -133,6 +133,8 @@ function createDb(cfg: BffConfig) {
   const db = new DatabaseSync(cfg.databaseUrl);
 
   db.exec(`
+    PRAGMA journal_mode = WAL;
+
     CREATE TABLE IF NOT EXISTS "auth_session" (
       "key" TEXT PRIMARY KEY NOT NULL,
       "session" TEXT NOT NULL
