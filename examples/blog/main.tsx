@@ -1,3 +1,4 @@
+import { lexicons } from "$lexicon/lexicons.ts";
 import { Record as EntryRecord } from "$lexicon/types/com/whtwnd/blog/entry.ts";
 import { AtUri } from "@atproto/syntax";
 import {
@@ -19,6 +20,7 @@ bff({
   appName: "AT Protocol Blog",
   collections: ["com.whtwnd.blog.entry"],
   jetstreamUrl: JETSTREAM.WEST_1,
+  lexicons,
   rootElement: Root,
   onListen: async ({ indexService }: onListenArgs) => {
     await backfillCollections(

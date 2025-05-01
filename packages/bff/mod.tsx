@@ -122,7 +122,7 @@ function configureBff(cfg: BffOptions): BffConfig {
       ":memory:",
     queueDatabaseUrl: Deno.env.get("BFF_QUEUE_DATABASE_URL") ??
       "file::memory:?cache=shared",
-    lexiconDir: Deno.env.get("BFF_LEXICON_DIR") ?? "__generated__",
+    lexicons: cfg.lexicons ?? new Lexicons(),
     oauthScope: cfg.oauthScope ?? "atproto transition:generic",
     middlewares: cfg.middlewares ?? [],
     rootElement: cfg.rootElement ?? Root,
@@ -472,7 +472,7 @@ function createSubscription(
   const jetstream = new Jetstream({
     instanceUrl: cfg.jetstreamUrl,
     wantedCollections: cfg.collections ?? [],
-    handleEvent: async (event) => {
+    handleEvent: (event) => {
       if (event.kind !== "commit") return;
       if (!event.commit) return;
 
@@ -487,9 +487,7 @@ function createSubscription(
           event.commit.operation === "update"
         )
       ) {
-        const lexicons = await getLexicons(cfg);
-
-        lexicons.assertValidRecord(
+        cfg.lexicons.assertValidRecord(
           event.commit.collection,
           hydrateBlobRefs(event.commit.record),
         );
@@ -586,17 +584,6 @@ function createSessionStore(db: Database): NodeSavedSessionStore {
   };
 }
 
-async function getLexicons(cfg: BffConfig) {
-  const lexiconsFile = join(
-    Deno.cwd(),
-    cfg.lexiconDir,
-    "lexicons.ts",
-  );
-  const lex = await import(lexiconsFile);
-  const schemas = lex.schemas;
-  return new Lexicons(schemas);
-}
-
 function createRecord(
   agent: Agent | undefined,
   indexService: IndexService,
@@ -608,7 +595,6 @@ function createRecord(
     self: boolean = false,
   ) => {
     const did = agent?.assertDid;
-    const lexicons = await getLexicons(cfg);
     const rkey = self ? "self" : TID.nextStr();
 
     if (!did) {
@@ -620,7 +606,7 @@ function createRecord(
       ...data,
     };
 
-    assert(lexicons.assertValidRecord(collection, record));
+    assert(cfg.lexicons.assertValidRecord(collection, record));
 
     const response = await agent.com.atproto.repo.createRecord({
       repo: agent.assertDid,
@@ -654,7 +640,6 @@ function updateRecord(
     data: { [_ in string]: unknown },
   ) => {
     const did = agent?.assertDid;
-    const lexicons = await getLexicons(cfg);
 
     if (!did) {
       throw new Error("Agent is not authenticated");
@@ -665,7 +650,7 @@ function updateRecord(
       ...data,
     };
 
-    assert(lexicons.assertValidRecord(collection, record));
+    assert(cfg.lexicons.assertValidRecord(collection, record));
 
     const response = await agent.com.atproto.repo.putRecord({
       repo: agent.assertDid,

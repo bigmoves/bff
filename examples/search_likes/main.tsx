@@ -1,3 +1,4 @@
+import { lexicons } from "$lexicon/lexicons.ts";
 import { Record as Profile } from "$lexicon/types/app/bsky/actor/profile.ts";
 import { Record as Like } from "$lexicon/types/app/bsky/feed/like.ts";
 import { Record as Post } from "$lexicon/types/app/bsky/feed/post.ts";
@@ -18,6 +19,7 @@ import { Button, Input, Layout, Login } from "@bigmoves/bff/components";
 bff({
   appName: "AT Protocol | Search Bsky Likes App",
   databaseUrl: "likes.db",
+  lexicons,
   rootElement: Root,
   middlewares: [
     oauth({

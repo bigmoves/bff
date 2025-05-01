@@ -1,3 +1,4 @@
+import { lexicons } from "$lexicon/lexicons.ts";
 import { Record as StatusRecord } from "$lexicon/types/xyz/statusphere/status.ts";
 import { Un$Typed } from "$lexicon/util.ts";
 import {
@@ -16,6 +17,7 @@ bff({
   appName: "Statusphere",
   collections: ["xyz.statusphere.status"],
   jetstreamUrl: JETSTREAM.WEST_1,
+  lexicons,
   rootElement: Root,
   middlewares: [
     oauth({

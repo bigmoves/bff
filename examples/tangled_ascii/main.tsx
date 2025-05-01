@@ -1,3 +1,4 @@
+import { lexicons } from "$lexicon/lexicons.ts";
 import { Record as Star } from "$lexicon/types/sh/tangled/feed/star.ts";
 import { Record as Repo } from "$lexicon/types/sh/tangled/repo.ts";
 import {
@@ -19,6 +20,7 @@ bff({
   appName: "Tangled ASCII",
   collections: ["sh.tangled.repo", "sh.tangled.feed.star"],
   jetstreamUrl: JETSTREAM.WEST_1,
+  lexicons,
   rootElement: Root,
   onListen: async ({ indexService }: onListenArgs) => {
     await backfillCollections(

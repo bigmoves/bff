@@ -1,3 +1,4 @@
+import { lexicons } from "$lexicon/lexicons.ts";
 import { bff, JETSTREAM, oauth } from "@bigmoves/bff";
 import { Login } from "@bigmoves/bff/components";
 import { Root } from "./app.tsx";
@@ -8,6 +9,7 @@ bff({
   appName: "AT Protocol App",
   collections: ["dev.fly.bffbasic.profile"],
   jetstreamUrl: JETSTREAM.WEST_1,
+  lexicons,
   rootElement: Root,
   middlewares: [
     profileStateResolver,
