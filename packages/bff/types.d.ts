@@ -66,6 +66,8 @@ export type BffOptions = {
   rootElement?: RootElement;
   /** Called when the server starts listening. */
   onListen?: (params: onListenArgs) => Promise<void> | void;
+  /** Called when the server throws an error. */
+  onError?: (err: unknown) => Response | Promise<Response>;
 };
 
 export type EnvConfig = {

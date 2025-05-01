@@ -48,6 +48,7 @@ import type {
 } from "./types.d.ts";
 import { hydrateBlobRefs } from "./utils.ts";
 
+export { UnauthorizedError } from "./errors.ts";
 export { JETSTREAM } from "./jetstream.ts";
 export type {
   ActorTable,
@@ -92,7 +93,10 @@ export async function bff(opts: BffOptions) {
     onListen({ port, hostname }) {
       console.log(`Server started at http://${hostname}:${port}`);
     },
-    onError(err) {
+    onError: (err) => {
+      if (bffConfig.onError) {
+        return bffConfig.onError(err);
+      }
       if (err instanceof UnauthorizedError) {
         return new Response("Unauthorized", {
           status: 401,
@@ -1308,6 +1312,6 @@ export function requireAuth<T>(
   currentUser: NonNullable<BffContext["currentUser"]>;
 } {
   if (!ctx.currentUser) {
-    throw new UnauthorizedError("User not authenticated");
+    throw new UnauthorizedError("User not authenticated", ctx);
   }
 }

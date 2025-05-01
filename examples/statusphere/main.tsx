@@ -6,8 +6,10 @@ import {
   JETSTREAM,
   oauth,
   OAUTH_ROUTES,
+  requireAuth,
   RootProps,
   route,
+  UnauthorizedError,
   WithBffMeta,
 } from "@bigmoves/bff";
 
@@ -19,6 +21,15 @@ bff({
   jetstreamUrl: JETSTREAM.WEST_1,
   lexicons,
   rootElement: Root,
+  onError: (err) => {
+    if (err instanceof UnauthorizedError) {
+      const ctx = err.ctx;
+      return ctx.redirect(OAUTH_ROUTES.loginPage);
+    }
+    return new Response("Internal Server Error", {
+      status: 500,
+    });
+  },
   middlewares: [
     oauth({
       LoginComponent: Login,
@@ -60,12 +71,9 @@ bff({
       );
     }),
     route("/status", ["POST"], async (req, _params, ctx) => {
+      requireAuth(ctx);
       const formData = await req.formData();
       const status = formData.get("status") as string;
-
-      if (!ctx.currentUser) {
-        return new Response("Not authorized", { status: 401 });
-      }
 
       await ctx.createRecord<Un$Typed<StatusRecord>>(
         "xyz.statusphere.status",
