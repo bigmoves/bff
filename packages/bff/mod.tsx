@@ -732,7 +732,7 @@ function html() {
 
 function redirect(headers: Headers) {
   return (url: string) => {
-    if (headers.get("HX-Request") === "true") {
+    if (headers.get("HX-Request") !== "true") {
       return new Response(null, {
         status: 302,
         headers: {
