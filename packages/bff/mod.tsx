@@ -416,7 +416,7 @@ function composeMiddlewares(
       didResolver,
       render: () => new Response(),
       html: html(),
-      redirect: redirect(),
+      redirect: redirect(req.headers),
       cfg,
       next: async () => new Response(),
       blobMetaCache,
@@ -730,8 +730,16 @@ function html() {
   };
 }
 
-function redirect() {
+function redirect(headers: Headers) {
   return (url: string) => {
+    if (headers.get("HX-Request") === "true") {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: url,
+        },
+      });
+    }
     return new Response(null, {
       status: 200,
       headers: {
