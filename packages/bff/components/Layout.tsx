@@ -2,29 +2,32 @@ import type { FunctionalComponent, JSX } from "preact";
 import { Button } from "./Button.tsx";
 import { cn } from "./utils.ts";
 
-interface LayoutProps extends JSX.HTMLAttributes<HTMLDivElement> {
+type LayoutProps = JSX.HTMLAttributes<HTMLDivElement> & {
   children: preact.ComponentChildren;
-}
+};
 
-interface LayoutContentProps extends JSX.HTMLAttributes<HTMLDivElement> {
+type LayoutContentProps = JSX.HTMLAttributes<HTMLDivElement> & {
   children: preact.ComponentChildren;
-}
+};
 
-interface LayoutNavProps {
+type LayoutNavProps = JSX.HTMLAttributes<HTMLDivElement> & {
   title: string | preact.VNode;
   profile?: {
     handle: string;
     avatar?: string;
   };
-}
+};
 
 const Layout: FunctionalComponent<LayoutProps> & {
   Content: FunctionalComponent<LayoutContentProps>;
   Nav: FunctionalComponent<LayoutNavProps>;
-} = ({ children, ...props }) => {
+} = ({ children, class: classProp, ...props }) => {
   return (
     <div
-      class="tw:h-full tw:max-w-5xl tw:mx-auto tw:sm:border-x tw:relative"
+      class={cn(
+        "tw:h-full tw:max-w-5xl tw:mx-auto tw:sm:border-x tw:relative",
+        classProp,
+      )}
       {...props}
     >
       {children}
@@ -45,9 +48,17 @@ const LayoutContent: FunctionalComponent<LayoutContentProps> = (
   );
 };
 
-const LayoutNav: FunctionalComponent<LayoutNavProps> = ({ title, profile }) => {
+const LayoutNav: FunctionalComponent<LayoutNavProps> = (
+  { title, profile, class: classProp, ...props },
+) => {
   return (
-    <nav class="tw:w-full tw:border-b tw:border-slate-950 tw:flex tw:justify-between tw:items-center tw:px-4 tw:h-14">
+    <nav
+      class={cn(
+        "tw:w-full tw:border-b tw:border-slate-950 tw:flex tw:justify-between tw:items-center tw:px-4 tw:h-14",
+        classProp,
+      )}
+      {...props}
+    >
       <div class="tw:flex tw:items-center tw:space-x-4">
         <a href="/">
           {title}

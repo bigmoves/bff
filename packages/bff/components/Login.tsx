@@ -42,7 +42,7 @@ export function Login(
         type="submit"
         class="tw:w-full"
       >
-        Login with AT Protocol
+        Login with Bluesky
       </Button>
       <div className="tw:h-4">
         {error
