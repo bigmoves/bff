@@ -25,7 +25,7 @@ export function Root(props: RootProps<State>) {
       <body class="h-full w-full">
         <Layout>
           <Layout.Nav
-            title={
+            heading={
               <>
                 <span className="text-sky-600">@</span> bff
               </>

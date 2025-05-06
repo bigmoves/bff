@@ -11,7 +11,7 @@ type LayoutContentProps = JSX.HTMLAttributes<HTMLDivElement> & {
 };
 
 type LayoutNavProps = JSX.HTMLAttributes<HTMLDivElement> & {
-  title: string | preact.VNode;
+  heading: string | preact.VNode;
   profile?: {
     handle: string;
     avatar?: string;
@@ -49,7 +49,7 @@ const LayoutContent: FunctionalComponent<LayoutContentProps> = (
 };
 
 const LayoutNav: FunctionalComponent<LayoutNavProps> = (
-  { title, profile, class: classProp, ...props },
+  { heading, profile, class: classProp, ...props },
 ) => {
   return (
     <nav
@@ -61,7 +61,7 @@ const LayoutNav: FunctionalComponent<LayoutNavProps> = (
     >
       <div class="tw:flex tw:items-center tw:space-x-4">
         <a href="/">
-          {title}
+          {heading}
         </a>
       </div>
       <div class="tw:space-x-2">

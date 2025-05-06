@@ -5,11 +5,14 @@
     "jsr:@cascades/markdown-parser@*": "0.1.0",
     "jsr:@deno/gfm@0.10": "0.10.0",
     "jsr:@denosaurs/emoji@0.3": "0.3.1",
-    "jsr:@std/assert@^1.0.12": "1.0.12",
+    "jsr:@std/assert@*": "1.0.13",
+    "jsr:@std/assert@^1.0.12": "1.0.13",
+    "jsr:@std/assert@^1.0.13": "1.0.13",
     "jsr:@std/cache@0.2": "0.2.0",
     "jsr:@std/cli@*": "1.0.16",
     "jsr:@std/cli@^1.0.12": "1.0.15",
     "jsr:@std/cli@^1.0.16": "1.0.16",
+    "jsr:@std/data-structures@^1.0.6": "1.0.7",
     "jsr:@std/encoding@^1.0.7": "1.0.8",
     "jsr:@std/fmt@^1.0.5": "1.0.6",
     "jsr:@std/fs@^1.0.15": "1.0.15",
@@ -21,6 +24,7 @@
     "jsr:@std/net@^1.0.4": "1.0.4",
     "jsr:@std/path@^1.0.8": "1.0.8",
     "jsr:@std/streams@^1.0.9": "1.0.9",
+    "jsr:@std/testing@^1.0.11": "1.0.11",
     "npm:@atcute/bluesky@^1.0.15": "1.0.15_@atcute+client@2.0.9",
     "npm:@atcute/client@^2.0.9": "2.0.9",
     "npm:@atproto-labs/handle-resolver-node@~0.1.14": "0.1.14",
@@ -103,8 +107,8 @@
     "@denosaurs/emoji@0.3.1": {
       "integrity": "b0aed5f55dec99e83da7c9637fe0a36d1d6252b7c99deaaa3fc5dea3fcf3da8b"
     },
-    "@std/assert@1.0.12": {
-      "integrity": "08009f0926dda9cbd8bef3a35d3b6a4b964b0ab5c3e140a4e0351fbf34af5b9a",
+    "@std/assert@1.0.13": {
+      "integrity": "ae0d31e41919b12c656c742b22522c32fb26ed0cba32975cb0de2a273cb68b29",
       "dependencies": [
         "jsr:@std/internal"
       ]
@@ -117,6 +121,9 @@
     },
     "@std/cli@1.0.16": {
       "integrity": "02df293099c35b9e97d8ca05f57f54bd1ee08134f25d19a4756b3924695f4b00"
+    },
+    "@std/data-structures@1.0.7": {
+      "integrity": "16932d2c8d281f65eaaa2209af2473209881e33b1ced54cd1b015e7b4cdbb0d2"
     },
     "@std/encoding@1.0.8": {
       "integrity": "a6c8f3f933ab1bed66244f435d1dc0fd23a888e07195532122ddc3d5f8f0e6b4"
@@ -166,6 +173,16 @@
     },
     "@std/streams@1.0.9": {
       "integrity": "a9d26b1988cdd7aa7b1f4b51e1c36c1557f3f252880fa6cc5b9f37078b1a5035"
+    },
+    "@std/testing@1.0.11": {
+      "integrity": "12b3db12d34f0f385a26248933bde766c0f8c5ad8b6ab34d4d38f528ab852f48",
+      "dependencies": [
+        "jsr:@std/assert@^1.0.12",
+        "jsr:@std/data-structures",
+        "jsr:@std/fs@^1.0.16",
+        "jsr:@std/internal",
+        "jsr:@std/path"
+      ]
     }
   },
   "npm": {
@@ -1865,11 +1882,12 @@
       "packages/bff": {
         "dependencies": [
           "jsr:@bigmoves/atproto-oauth-client@0.1",
-          "jsr:@std/assert@^1.0.12",
+          "jsr:@std/assert@^1.0.13",
           "jsr:@std/cache@0.2",
           "jsr:@std/fs@^1.0.15",
           "jsr:@std/http@^1.0.13",
           "jsr:@std/path@^1.0.8",
+          "jsr:@std/testing@^1.0.11",
           "npm:@atproto-labs/handle-resolver-node@~0.1.14",
           "npm:@atproto/api@~0.14.19",
           "npm:@atproto/common@~0.4.10",
