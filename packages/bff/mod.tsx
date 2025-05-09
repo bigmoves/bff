@@ -122,6 +122,7 @@ function configureBff(cfg: BffOptions): BffConfig {
     rootDir: Deno.env.get("BFF_ROOT_DIR") ?? Deno.cwd(),
     publicUrl: Deno.env.get("BFF_PUBLIC_URL") ?? "",
     port: Number(Deno.env.get("BFF_PORT")) || 8080,
+    litefsDir: Deno.env.get("BFF_LITEFS_DIR") ?? "/litefs",
     databaseUrl: cfg.databaseUrl ?? Deno.env.get("BFF_DATABASE_URL") ??
       ":memory:",
     queueDatabaseUrl: Deno.env.get("BFF_QUEUE_DATABASE_URL") ??
@@ -420,6 +421,7 @@ function composeMiddlewares(
       cfg,
       next: async () => new Response(),
       blobMetaCache,
+      ensurePrimary: ensurePrimary(cfg),
     };
 
     ctx.render = render(ctx, cfg);
@@ -478,7 +480,10 @@ function createSubscription(
   const jetstream = new Jetstream({
     instanceUrl: cfg.jetstreamUrl,
     wantedCollections: cfg.collections ?? [],
-    handleEvent: (event) => {
+    handleEvent: async (event) => {
+      const { currentIsPrimary } = await getInstanceInfo(cfg);
+      if (!currentIsPrimary) return;
+
       if (event.kind !== "commit") return;
       if (!event.commit) return;
 
@@ -803,6 +808,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
 
     if (pathname === OAUTH_ROUTES.callback) {
       try {
+        await ctx.ensurePrimary();
         const { session } = await ctx.oauthClient.callback(searchParams);
 
         const agent = new Agent(session);
@@ -1322,4 +1328,46 @@ export function requireAuth<T>(
   if (!ctx.currentUser) {
     throw new UnauthorizedError("User not authenticated", ctx);
   }
+}
+
+export async function getInstanceInfo(
+  cfg: BffConfig,
+): Promise<{
+  primaryInstance: string;
+  currentInstance: string;
+  currentIsPrimary: boolean;
+}> {
+  const currentInstance = Deno.hostname();
+  let primaryInstance;
+
+  try {
+    primaryInstance = await Deno.readTextFile(
+      join(cfg.litefsDir, ".primary"),
+    );
+    primaryInstance = primaryInstance.trim();
+  } catch {
+    primaryInstance = currentInstance;
+  }
+
+  return {
+    primaryInstance,
+    currentInstance,
+    currentIsPrimary: currentInstance === primaryInstance,
+  };
+}
+
+export function ensurePrimary(
+  cfg: BffConfig,
+): () => Promise<true | Response> {
+  return async () => {
+    const { currentIsPrimary, primaryInstance } = await getInstanceInfo(cfg);
+    if (currentIsPrimary) return true;
+
+    return new Response(null, {
+      status: 409,
+      headers: {
+        "fly-replay": `instance=${primaryInstance}`,
+      },
+    });
+  };
 }

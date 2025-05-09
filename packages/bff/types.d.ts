@@ -83,6 +83,8 @@ export type EnvConfig = {
    * @default process.cwd()
    */
   rootDir: string;
+  /** The lifefs directory. This should be what you set your fuse.dir config to in the litefs.yml config. */
+  litefsDir: string;
 };
 
 export type BffConfig = BffOptions & EnvConfig & {
@@ -176,6 +178,7 @@ export type BffContext<State = Record<string, unknown>> = {
   render: (children: ComponentChildren) => Response;
   html: (vnode: VNode, headers?: Record<string, string>) => Response;
   redirect: (url: string) => Response;
+  ensurePrimary: () => Promise<boolean | Response>;
 };
 
 export type onSignedInArgs = {
