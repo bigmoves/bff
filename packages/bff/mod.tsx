@@ -421,7 +421,6 @@ function composeMiddlewares(
       cfg,
       next: async () => new Response(),
       blobMetaCache,
-      ensurePrimary: ensurePrimary(cfg),
     };
 
     ctx.render = render(ctx, cfg);
@@ -808,7 +807,19 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
 
     if (pathname === OAUTH_ROUTES.callback) {
       try {
-        await ctx.ensurePrimary();
+        const { currentIsPrimary, primaryInstance } = await getInstanceInfo(
+          ctx.cfg,
+        );
+
+        if (!currentIsPrimary) {
+          return new Response(null, {
+            status: 409,
+            headers: {
+              "fly-replay": `instance=${primaryInstance}`,
+            },
+          });
+        }
+
         const { session } = await ctx.oauthClient.callback(searchParams);
 
         const agent = new Agent(session);
@@ -1353,21 +1364,5 @@ export async function getInstanceInfo(
     primaryInstance,
     currentInstance,
     currentIsPrimary: currentInstance === primaryInstance,
-  };
-}
-
-export function ensurePrimary(
-  cfg: BffConfig,
-): () => Promise<true | Response> {
-  return async () => {
-    const { currentIsPrimary, primaryInstance } = await getInstanceInfo(cfg);
-    if (currentIsPrimary) return true;
-
-    return new Response(null, {
-      status: 409,
-      headers: {
-        "fly-replay": `instance=${primaryInstance}`,
-      },
-    });
   };
 }

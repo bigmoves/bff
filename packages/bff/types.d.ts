@@ -178,7 +178,6 @@ export type BffContext<State = Record<string, unknown>> = {
   render: (children: ComponentChildren) => Response;
   html: (vnode: VNode, headers?: Record<string, string>) => Response;
   redirect: (url: string) => Response;
-  ensurePrimary: () => Promise<boolean | Response>;
 };
 
 export type onSignedInArgs = {
