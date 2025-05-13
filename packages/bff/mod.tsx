@@ -127,6 +127,8 @@ function configureBff(cfg: BffOptions): BffConfig {
       ":memory:",
     queueDatabaseUrl: Deno.env.get("BFF_QUEUE_DATABASE_URL") ??
       "file::memory:?cache=shared",
+    cookieSecret: Deno.env.get("BFF_COOKIE_SECRET") ??
+      "000000000000000000000000000000000",
     lexicons: cfg.lexicons ?? new Lexicons(),
     oauthScope: cfg.oauthScope ?? "atproto transition:generic",
     middlewares: cfg.middlewares ?? [],
@@ -379,19 +381,25 @@ function composeMiddlewares(
 
     let agent: Agent | undefined;
     let currentUser: ActorTable | undefined;
-    const cookies = getCookies(req.headers);
 
-    if (cookies.auth) {
+    const cookie = getCookies(req.headers);
+    let sessionDid: string | undefined;
+
+    if (cookie.auth) {
       try {
-        const oauthSession = await oauthClient.restore(cookies.auth);
+        sessionDid = await parseCookie(cookie.auth, cfg.cookieSecret);
+        if (!sessionDid) {
+          throw new Error("Failed to parse cookie");
+        }
+        const oauthSession = await oauthClient.restore(sessionDid);
         agent = new Agent(oauthSession);
       } catch (err) {
         console.error("failed to restore oauth session", err);
       }
     }
 
-    if (agent) {
-      const actor = idxService.getActor(cookies.auth);
+    if (agent && sessionDid) {
+      const actor = idxService.getActor(sessionDid);
       currentUser = actor;
     }
 
@@ -848,11 +856,15 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
 
         const redirectPath = await opts?.onSignedIn?.({ actor, ctx });
 
+        const value = btoa(session.did);
+        const signature = await signCookie(value, ctx.cfg.cookieSecret);
+        const signedCookie = `${value}|${signature}`;
+
         const headers = new Headers();
         setCookie(headers, {
           name: "auth",
-          value: session.did,
-          maxAge: 3600,
+          value: signedCookie,
+          maxAge: 604800, // 7 days
           sameSite: "Lax",
           domain: hostname,
           path: "/",
@@ -897,7 +909,11 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
 
     if (pathname === OAUTH_ROUTES.logout) {
       if (cookie.auth) {
-        ctx.oauthClient.revoke(cookie.auth);
+        const value = await parseCookie(cookie.auth, ctx.cfg.cookieSecret);
+        if (!value) {
+          throw new Error("Failed to parse cookie");
+        }
+        ctx.oauthClient.revoke(value);
       }
 
       deleteCookie(headers, "auth", { path: "/", domain: hostname });
@@ -918,6 +934,45 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
 
     return ctx.next();
   };
+}
+
+async function signCookie(value: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(value),
+  );
+
+  return btoa(String.fromCharCode(...new Uint8Array(signature)));
+}
+
+async function verifyCookie(
+  signedValue: string,
+  secret: string,
+): Promise<boolean> {
+  const [value, signature] = signedValue.split("|");
+  const expectedSignature = await signCookie(value, secret);
+  return signature === expectedSignature;
+}
+
+async function parseCookie(
+  signedValue: string,
+  secret: string,
+): Promise<string | undefined> {
+  const [value, _signature] = signedValue.split("|");
+  if (await verifyCookie(signedValue, secret)) {
+    return atob(value);
+  }
+  return undefined;
 }
 
 type RecordTableWithoutIndexedAt = Omit<

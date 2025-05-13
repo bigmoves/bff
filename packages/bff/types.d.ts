@@ -85,6 +85,8 @@ export type EnvConfig = {
   rootDir: string;
   /** The lifefs directory. This should be what you set your fuse.dir config to in the litefs.yml config. */
   litefsDir: string;
+  /** The cookie secret */
+  cookieSecret: string;
 };
 
 export type BffConfig = BffOptions & EnvConfig & {
