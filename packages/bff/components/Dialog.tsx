@@ -14,9 +14,11 @@ type DialogTitleProps = {
   children: preact.ComponentChildren;
 };
 
-type DialogCloseProps = JSX.HTMLAttributes<HTMLDivElement> & {
+type DialogCloseProps = JSX.HTMLAttributes<HTMLButtonElement> & {
   children: preact.ComponentChildren;
 };
+
+type DialogXProps = JSX.HTMLAttributes<HTMLButtonElement>;
 
 const _closeOnClick = "on click trigger closeDialog";
 
@@ -24,6 +26,7 @@ const Dialog: FunctionalComponent<DialogProps> & {
   Content: FunctionalComponent<DialogContentProps>;
   Title: FunctionalComponent<DialogTitleProps>;
   Close: FunctionalComponent<DialogCloseProps>;
+  X: FunctionalComponent<DialogXProps>;
   _closeOnClick: string;
 } = ({ children, class: classProp, _ = "", ...props }) => {
   return (
@@ -52,22 +55,6 @@ const Dialog: FunctionalComponent<DialogProps> & {
           _: _closeOnClick,
         }}
       />
-      <button
-        type="button"
-        class="tw:absolute tw:top-4 tw:right-4 tw:h-4 tw:w-4 tw:cursor-pointer z-30"
-        {...{
-          _: _closeOnClick,
-        }}
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 384 512"
-          class="tw:fill-white"
-        >
-          {/* <!--!Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2025 Fonticons, Inc.-->*/}
-          <path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z" />
-        </svg>
-      </button>
       {children}
     </div>
   );
@@ -97,7 +84,32 @@ const DialogTitle: FunctionalComponent<DialogTitleProps> = ({ children }) => {
   );
 };
 
-const DialogClose: FunctionalComponent<DialogTitleProps> = (
+const DialogX: FunctionalComponent<DialogXProps> = ({
+  class: classProp,
+}) => {
+  return (
+    <button
+      type="button"
+      class={cn(
+        "tw:absolute tw:top-4 tw:right-4 tw:h-4 tw:w-4 tw:cursor-pointer z-30 tw:fill-white",
+        classProp,
+      )}
+      {...{
+        _: _closeOnClick,
+      }}
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 384 512"
+      >
+        {/* <!--!Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2025 Fonticons, Inc.-->*/}
+        <path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z" />
+      </svg>
+    </button>
+  );
+};
+
+const DialogClose: FunctionalComponent<DialogCloseProps> = (
   { children, ...props },
 ) => {
   return (
@@ -115,6 +127,7 @@ const DialogClose: FunctionalComponent<DialogTitleProps> = (
 Dialog.Content = DialogContent;
 Dialog.Title = DialogTitle;
 Dialog.Close = DialogClose;
+Dialog.X = DialogX;
 Dialog._closeOnClick = _closeOnClick;
 
 export { Dialog };

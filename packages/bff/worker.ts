@@ -115,7 +115,7 @@ async function processImage(item: QueueItem) {
 
   const imageBuffer = await Deno.readFile(item.imagePath);
 
-  const { buffer, dimensions } = await compressImage(imageBuffer);
+  const { buffer, dimensions } = await resizeImage(imageBuffer);
 
   await Deno.writeFile(item.imagePath, buffer);
 
@@ -135,20 +135,37 @@ async function processImage(item: QueueItem) {
   });
 }
 
-async function compressImage(
+async function resizeImage(
   fileBuffer: Uint8Array,
 ): Promise<
   { dimensions: { width?: number; height?: number }; buffer: Uint8Array }
 > {
-  const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
-  const TARGET_WIDTH = 1200;
-  let quality = 90;
+  const MAX_FILE_SIZE = 1000000; // 1MB
+  const MAX_WIDTH = 2000;
+  const MAX_HEIGHT = 2000;
 
-  let buffer = await sharp(fileBuffer)
-    .autoOrient()
-    .resize({ width: TARGET_WIDTH, withoutEnlargement: true })
-    .webp({ quality })
-    .toBuffer();
+  // If already small enough, return dimensions without re-encoding
+  if (fileBuffer.length <= MAX_FILE_SIZE) {
+    const metadata = await sharp(fileBuffer).metadata();
+    const { width, height } = metadata;
+    return { dimensions: { width, height }, buffer: fileBuffer };
+  }
+
+  const resize = async (quality: number) => {
+    return await sharp(fileBuffer)
+      .autoOrient()
+      .resize({
+        width: MAX_WIDTH,
+        height: MAX_HEIGHT,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality })
+      .toBuffer();
+  };
+
+  let quality = 90;
+  let buffer = await resize(quality);
 
   if (buffer.length <= MAX_FILE_SIZE) {
     const metadata = await sharp(buffer).metadata();
@@ -161,12 +178,7 @@ async function compressImage(
 
   while (minQuality <= maxQuality) {
     quality = Math.floor((minQuality + maxQuality) / 2);
-
-    buffer = await sharp(fileBuffer)
-      .autoOrient()
-      .resize({ width: TARGET_WIDTH, withoutEnlargement: true })
-      .webp({ quality })
-      .toBuffer();
+    buffer = await resize(quality);
 
     if (buffer.length <= MAX_FILE_SIZE) {
       minQuality = quality + 1; // Try to find higher quality that fits
@@ -175,11 +187,11 @@ async function compressImage(
     }
   }
 
-  buffer = await sharp(fileBuffer)
-    .autoOrient()
-    .resize({ width: TARGET_WIDTH, withoutEnlargement: true })
-    .webp({ quality: maxQuality })
-    .toBuffer();
+  buffer = await resize(maxQuality);
+
+  if (buffer.length > MAX_FILE_SIZE) {
+    throw new Error("Unable to compress image below max file size.");
+  }
 
   const metadata = await sharp(buffer).metadata();
   const { width, height } = metadata;

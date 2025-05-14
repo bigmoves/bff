@@ -138,14 +138,9 @@ type BlobMeta = {
   };
 };
 
-type UploadBlobOptions = {
-  compress?: boolean;
-};
-
 export type UploadBlobArgs = {
   file: File;
   dataUrl?: string;
-  opts?: UploadBlobOptions;
 };
 
 export type BffContext<State = Record<string, unknown>> = {

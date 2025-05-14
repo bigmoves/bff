@@ -1180,7 +1180,7 @@ const uploadBlob = (
   agent: Agent | undefined,
   blobMetaCache: TtlCache<string, BlobMeta>,
 ) => {
-  return ({ file, dataUrl, opts }: UploadBlobArgs): string => {
+  return ({ file, dataUrl }: UploadBlobArgs): string => {
     const uploadId = crypto.randomUUID();
 
     blobMetaCache.set(uploadId, {
@@ -1200,7 +1200,6 @@ const uploadBlob = (
       did: agent.assertDid,
       file,
       uploadId,
-      opts,
     });
 
     return uploadId.toString();
@@ -1212,15 +1211,11 @@ async function enqueueImage({
   did,
   file,
   uploadId,
-  opts,
 }: {
   queue: Queue;
   did: string;
   file: File;
   uploadId: string;
-  opts?: {
-    compress?: boolean;
-  };
 }) {
   const arrayBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
@@ -1247,7 +1242,6 @@ async function enqueueImage({
       uploadId,
       did,
       imagePath,
-      opts,
     },
   };
 
