@@ -87,6 +87,12 @@ export type EnvConfig = {
   litefsDir: string;
   /** The cookie secret */
   cookieSecret: string;
+  /** jwks private key 1 */
+  privateKey1?: string;
+  /** jwks private key 2 */
+  privateKey2?: string;
+  /** jwks private key 3 */
+  privateKey3?: string;
 };
 
 export type BffConfig = BffOptions & EnvConfig & {

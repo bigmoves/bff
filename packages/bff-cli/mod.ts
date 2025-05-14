@@ -83,8 +83,21 @@ if (import.meta.main) {
         );
       }
       break;
-    case "lex": {
+    case "lexgen": {
       await codegen();
+      break;
+    }
+    case "generate-jwks": {
+      const privateKeys: Record<string, string> = {
+        BFF_PRIVATE_KEY_1: await generateECKey("key-1"),
+        BFF_PRIVATE_KEY_2: await generateECKey("key-2"),
+        BFF_PRIVATE_KEY_3: await generateECKey("key-3"),
+      };
+      const envContent = Object.entries(privateKeys)
+        .map(([key, value]) => `${key}='${value}'`)
+        .join("\n");
+      await Deno.writeTextFile(".env", envContent, { append: true });
+      console.log("Private keys generated and saved to .env file");
       break;
     }
     case "tailwind": {
@@ -198,6 +211,11 @@ function printHelp(): void {
   console.log(`Usage: bff [OPTIONS...]`);
   console.log("\nArguments:");
   console.log("  init <directory>          Initialize a new bff project");
+  console.log("  lexgen                    Generate types from lexicons");
+  console.log(
+    "  generate-jwks             Generate private keys and save to .env file",
+  );
+  console.log("  tailwind                  Install and set up Tailwind CSS");
   console.log("\nOptional flags:");
   console.log("  -h, --help                Display help");
   Deno.exit(0);
@@ -264,4 +282,30 @@ function addTailwindTasksToDenoJson(existingDenoJson: string) {
   };
 
   return JSON.stringify(config, null, 2);
+}
+
+async function generateECKey(kid: string): Promise<string> {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: "ECDSA",
+      namedCurve: "P-256",
+    },
+    true,
+    ["sign", "verify"],
+  );
+
+  const publicJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+  const privateJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
+
+  const jwk = {
+    kty: "EC",
+    crv: "P-256",
+    use: "sig",
+    kid,
+    x: publicJwk.x,
+    y: publicJwk.y,
+    d: privateJwk.d,
+  };
+
+  return JSON.stringify(jwk);
 }

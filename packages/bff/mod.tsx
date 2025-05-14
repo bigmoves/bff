@@ -11,6 +11,7 @@ import {
   type NodeSavedState,
   type NodeSavedStateStore,
 } from "@bigmoves/atproto-oauth-client";
+import { JoseKey } from "@bigmoves/atproto-oauth-client/jose_key.ts";
 import { assert } from "@std/assert";
 import { TtlCache } from "@std/cache";
 import { deleteCookie, getCookies, setCookie } from "@std/http";
@@ -74,7 +75,7 @@ export async function bff(opts: BffOptions) {
   const bffConfig = configureBff(opts);
   const db = createDb(bffConfig);
   const idxService = indexService(db);
-  const oauthClient = createOauthClient(db, bffConfig);
+  const oauthClient = await createOauthClient(db, bffConfig);
   const queue = await createQueue(oauthClient, blobMetaCache, bffConfig);
   const handler = createBffHandler(db, oauthClient, queue, bffConfig);
   const jetstream = createSubscription(idxService, bffConfig);
@@ -129,6 +130,9 @@ function configureBff(cfg: BffOptions): BffConfig {
       "file::memory:?cache=shared",
     cookieSecret: Deno.env.get("BFF_COOKIE_SECRET") ??
       "000000000000000000000000000000000",
+    privateKey1: Deno.env.get("BFF_PRIVATE_KEY_1"),
+    privateKey2: Deno.env.get("BFF_PRIVATE_KEY_2"),
+    privateKey3: Deno.env.get("BFF_PRIVATE_KEY_3"),
     lexicons: cfg.lexicons ?? new Lexicons(),
     oauthScope: cfg.oauthScope ?? "atproto transition:generic",
     middlewares: cfg.middlewares ?? [],
@@ -527,34 +531,46 @@ function createSubscription(
   return jetstream;
 }
 
-function createOauthClient(db: Database, cfg: BffConfig) {
+async function createOauthClient(db: Database, cfg: BffConfig) {
   const publicUrl = cfg.publicUrl;
   const url = publicUrl || `http://127.0.0.1:${cfg.port}`;
   const enc = encodeURIComponent;
   const scope = cfg.oauthScope;
+
+  const hasPrivateKeys =
+    !!(cfg.privateKey1 && cfg.privateKey2 && cfg.privateKey3);
 
   return new AtprotoOAuthClient({
     responseMode: "query",
     clientMetadata: {
       client_name: cfg.appName,
       client_id: publicUrl
-        ? `${url}/client-metadata.json`
+        ? `${url}${OAUTH_ROUTES.clientMetadata}`
         : `http://localhost?redirect_uri=${
           enc(
             `${url}/oauth/callback`,
           )
         }&scope=${enc(scope)}`,
       client_uri: url,
-      redirect_uris: [`${url}/oauth/callback`],
+      jwks_uri: `${url}${OAUTH_ROUTES.jwks}`,
+      redirect_uris: [`${url}${OAUTH_ROUTES.callback}`],
       scope,
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       application_type: "web",
-      token_endpoint_auth_method: "none",
+      token_endpoint_auth_method: hasPrivateKeys ? "private_key_jwt" : "none",
       dpop_bound_access_tokens: true,
+      ...hasPrivateKeys && { token_endpoint_auth_signing_alg: "ES256" },
     },
     stateStore: createStateStore(db),
     sessionStore: createSessionStore(db),
+    ...hasPrivateKeys && {
+      keyset: await Promise.all([
+        JoseKey.fromImportable(cfg.privateKey1 ?? "{}"),
+        JoseKey.fromImportable(cfg.privateKey2 ?? "{}"),
+        JoseKey.fromImportable(cfg.privateKey3 ?? "{}"),
+      ]),
+    },
   });
 }
 
@@ -781,7 +797,8 @@ export const OAUTH_ROUTES = {
   callback: "/oauth/callback",
   signup: "/signup",
   logout: "/logout",
-  clientMetadata: "/client-metadata.json",
+  clientMetadata: "/oauth/client-metadata.json",
+  jwks: "/oauth/jwks.json",
 };
 
 export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
@@ -913,7 +930,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         if (!value) {
           throw new Error("Failed to parse cookie");
         }
-        ctx.oauthClient.revoke(value);
+        await ctx.oauthClient.revoke(value);
       }
 
       deleteCookie(headers, "auth", { path: "/", domain: hostname });
@@ -928,6 +945,12 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
 
     if (pathname === OAUTH_ROUTES.clientMetadata) {
       return new Response(JSON.stringify(ctx.oauthClient.clientMetadata), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (pathname === OAUTH_ROUTES.jwks) {
+      return new Response(JSON.stringify(ctx.oauthClient.jwks), {
         headers: { "Content-Type": "application/json" },
       });
     }
