@@ -129,6 +129,7 @@ export type IndexService = {
   ) => T | undefined;
   insertRecord: (record: RecordTable) => void;
   updateRecord: (record: RecordTable) => void;
+  updateRecords: (records: RecordTable[]) => void;
   deleteRecord: (uri: string) => void;
   insertActor: (actor: ActorTable) => void;
   getActor: (did: string) => ActorTable | undefined;
@@ -164,6 +165,13 @@ export type BffContext<State = Record<string, unknown>> = {
     rkey: string,
     data: Partial<T>,
   ) => Promise<string>;
+  updateRecords: <T>(
+    updates: Array<{
+      collection: string;
+      rkey: string;
+      data: Partial<T>;
+    }>,
+  ) => Promise<string[]>;
   deleteRecord: (uri: string) => Promise<void>;
   backfillCollections: (
     repos: string[],
