@@ -15,7 +15,7 @@ import {
 import { Button, Input, Layout, Login } from "@bigmoves/bff/components";
 
 // NOTE: More of a proof of concept. Expensive to gather all post records across the network.
-// Though you only need to pull the post records once, and then you can use the index service.
+// Though you only need to pull the post records once, and then you can query the index service.
 bff({
   appName: "AT Protocol | Search Bsky Likes App",
   databaseUrl: "likes.db",
@@ -114,6 +114,14 @@ bff({
           return [post.uri, profile];
         }),
       );
+      const handleMap = new Map(
+        posts.map((post) => {
+          const did = new AtUri(post.uri).hostname;
+          const actor = ctx.indexService.getActor(did);
+          return [post.uri, actor?.handle ?? ""];
+        }),
+      );
+
       const postAuthor = (post: WithBffMeta<Post>) => {
         const profile = profileMap.get(post.uri);
         if (profile) {
@@ -137,9 +145,14 @@ bff({
       return ctx.html(
         <ul class="space-y-2">
           {orderedPosts.map((p) => (
-            <li key={p.uri} class="flex items-center">
-              {postAuthor(p)}
-              {p.text}
+            <li key={p.uri}>
+              <a
+                class="flex items-center"
+                href={postLink(p, handleMap.get(p.uri) ?? "")}
+              >
+                {postAuthor(p)}
+                {p.text}
+              </a>
             </li>
           ))}
         </ul>,
@@ -182,9 +195,9 @@ function Root(props: Readonly<RootProps>) {
         <Layout>
           <Layout.Nav
             heading={
-              <>
+              <h1 class="text-2xl font-semibold">
                 <span className="text-sky-600">@</span> likes
-              </>
+              </h1>
             }
           />
           <Layout.Content class="p-4">
@@ -194,4 +207,11 @@ function Root(props: Readonly<RootProps>) {
       </body>
     </html>
   );
+}
+
+function postLink(
+  post: WithBffMeta<Post>,
+  handle: string,
+) {
+  return `https://bsky.app/profile/${handle}/post/${new AtUri(post.uri).rkey}`;
 }

@@ -1120,20 +1120,22 @@ async function getRecordsForRepos(
   collections: string[],
   atpMap: Map<string, AtprotoData>,
 ): Promise<RecordTableWithoutIndexedAt[]> {
-  const records: RecordTableWithoutIndexedAt[] = [];
+  async function fetchRecordsForRepoCollection(
+    repo: string,
+    collection: string,
+  ): Promise<RecordTableWithoutIndexedAt[]> {
+    const repoRecords: RecordTableWithoutIndexedAt[] = [];
+    const atpData = atpMap.get(repo);
 
-  for (const repo of repos) {
-    for (const collection of collections) {
-      let cursor: string | undefined = undefined;
+    if (!atpData) {
+      console.error(`No Atproto data found for repo: ${repo}`);
+      return [];
+    }
 
-      const atpData = atpMap.get(repo);
-      if (!atpData) {
-        console.error(`No Atproto data found for repo: ${repo}`);
-        continue;
-      }
+    const agent = new Agent(new URL(atpData.pds));
+    let cursor: string | undefined = undefined;
 
-      const agent = new Agent(new URL(atpData.pds));
-
+    try {
       do {
         const response = await agent.com.atproto.repo.listRecords({
           repo,
@@ -1141,8 +1143,9 @@ async function getRecordsForRepos(
           cursor,
           limit: 100,
         });
+
         response.data.records.forEach((r) => {
-          records.push({
+          repoRecords.push({
             uri: r.uri,
             cid: r.cid.toString(),
             did: repo,
@@ -1150,18 +1153,35 @@ async function getRecordsForRepos(
             json: stringifyLex(r.value),
           } as RecordTableWithoutIndexedAt);
         });
-        cursor = response.data.cursor ?? undefined; // Continue fetching if there's more data
+
+        cursor = response.data.cursor ?? undefined;
       } while (cursor);
+
+      return repoRecords;
+    } catch (error) {
+      console.error(`Error fetching records for ${repo}/${collection}:`, error);
+      return [];
     }
   }
-  return records;
+
+  const fetchPromises = repos.flatMap((repo) =>
+    collections.map((collection) =>
+      fetchRecordsForRepoCollection(repo, collection)
+    )
+  );
+
+  const results = await Promise.all(fetchPromises);
+
+  return results.flat();
 }
+
+const atpCache = new MemoryCache();
 
 async function getAtpMapForRepos(
   repos: string[],
 ): Promise<Map<string, AtprotoData>> {
   const didResolver = new DidResolver({
-    didCache: new MemoryCache(),
+    didCache: atpCache,
   });
   const atpMap = new Map<string, AtprotoData>();
   for (const repo of repos) {
@@ -1175,50 +1195,66 @@ async function getAtpMapForRepos(
 
 async function getRecordsForUris(
   uris: string[],
+  atpMap: Map<string, AtprotoData>,
   indexService: IndexService,
 ): Promise<RecordTableWithoutIndexedAt[]> {
-  const records: RecordTableWithoutIndexedAt[] = [];
+  const urisToFetch = uris.filter((uri) => !indexService.getRecord(uri));
 
-  uris = uris.filter((uri) => {
-    const record = indexService.getRecord(uri);
-    return !record;
-  });
-  if (uris.length === 0) {
-    return records;
+  if (urisToFetch.length === 0) {
+    return [];
   }
 
-  const dids = uris.map((uri) => new AtUri(uri).hostname);
-  const atpMap = await getAtpMapForRepos(dids);
-
-  for (const uri of uris) {
+  const urisByDid = new Map<string, string[]>();
+  urisToFetch.forEach((uri) => {
     const did = new AtUri(uri).hostname;
-    const atpData = atpMap.get(did);
-    if (!atpData) {
-      console.error(`No Atproto data found for repo: ${did}`);
-      continue;
+    if (!urisByDid.has(did)) {
+      urisByDid.set(did, []);
     }
-    const agent = new Agent(new URL(atpData.pds));
-    try {
-      console.log(`Fetching record for ${uri}`);
-      const collection = new AtUri(uri).collection;
-      const response = await agent.com.atproto.repo.getRecord({
-        repo: did,
-        collection: collection,
-        rkey: new AtUri(uri).rkey,
+    urisByDid.get(did)!.push(uri);
+  });
+
+  const fetchPromises = Array.from(urisByDid.entries()).map(
+    async ([did, didUris]): Promise<RecordTableWithoutIndexedAt[]> => {
+      const atpData = atpMap.get(did);
+      if (!atpData) {
+        console.error(`No Atproto data found for repo: ${did}`);
+        return [];
+      }
+
+      const agent = new Agent(new URL(atpData.pds));
+
+      const uriPromises = didUris.map(async (uri) => {
+        try {
+          const atUri = new AtUri(uri);
+          console.log(`Fetching record for ${uri}`);
+          const response = await agent.com.atproto.repo.getRecord({
+            repo: did,
+            collection: atUri.collection,
+            rkey: atUri.rkey,
+          });
+
+          return {
+            uri: response.data.uri,
+            cid: response.data.cid,
+            did,
+            collection: atUri.collection,
+            json: stringifyLex(response.data.value),
+          } as RecordTableWithoutIndexedAt;
+        } catch (error) {
+          console.error(`Failed to fetch record from ${uri}:`, error);
+          return null;
+        }
       });
-      records.push({
-        uri: response.data.uri,
-        cid: response.data.cid,
-        did,
-        collection,
-        json: stringifyLex(response.data.value),
-      } as RecordTableWithoutIndexedAt);
-    } catch (error) {
-      console.error(`Failed to fetch record from ${uri}:`, error);
-      continue;
-    }
-  }
-  return records;
+
+      const results = await Promise.all(uriPromises);
+      return results.filter((record): record is RecordTableWithoutIndexedAt =>
+        record !== null
+      );
+    },
+  );
+
+  const resultsArrays = await Promise.all(fetchPromises);
+  return resultsArrays.flat();
 }
 
 function indexRecords(
@@ -1237,11 +1273,30 @@ function indexRecords(
   }
 }
 
+function indexActors(
+  repos: string[],
+  atpMap: Map<string, AtprotoData>,
+  indexService: IndexService,
+) {
+  for (const repo of repos) {
+    const atpData = atpMap.get(repo);
+    if (!atpData) continue;
+    indexService.insertActor({
+      did: repo,
+      handle: atpData.handle,
+      indexedAt: new Date().toISOString(),
+    });
+  }
+}
+
 export function backfillUris(
   indexService: IndexService,
 ): (uris: string[]) => Promise<void> {
   return async (uris: string[]) => {
-    const records = await getRecordsForUris(uris, indexService);
+    const repos = uris.map((uri) => new AtUri(uri).hostname);
+    const atpMap = await getAtpMapForRepos(repos);
+    const records = await getRecordsForUris(uris, atpMap, indexService);
+    indexActors(repos, atpMap, indexService);
     indexRecords(records, indexService);
   };
 }
@@ -1255,15 +1310,7 @@ export function backfillCollections(
   ) => {
     const atpMap = await getAtpMapForRepos(repos);
     const records = await getRecordsForRepos(repos, collections, atpMap);
-    for (const repo of repos) {
-      const atpData = atpMap.get(repo);
-      if (!atpData) continue;
-      indexService.insertActor({
-        did: repo,
-        handle: atpData.handle,
-        indexedAt: new Date().toISOString(),
-      });
-    }
+    indexActors(repos, atpMap, indexService);
     indexRecords(records, indexService);
   };
 }

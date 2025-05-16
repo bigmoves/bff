@@ -1,4 +1,4 @@
 node_modules
-*.db
+*.db*
 .DS_Store
 *.fly.toml

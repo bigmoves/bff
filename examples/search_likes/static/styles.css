@@ -9,7 +9,9 @@
       "Courier New", monospace;
     --color-sky-600: oklch(58.8% 0.158 241.966);
     --spacing: 0.25rem;
-    --container-5xl: 64rem;
+    --text-2xl: 1.5rem;
+    --text-2xl--line-height: calc(2 / 1.5);
+    --font-weight-semibold: 600;
     --default-font-family: var(--font-sans);
     --default-mono-font-family: var(--font-mono);
   }
@@ -163,15 +165,6 @@
   .absolute {
     position: absolute;
   }
-  .mx-auto {
-    margin-inline: auto;
-  }
-  .my-2 {
-    margin-block: calc(var(--spacing) * 2);
-  }
-  .my-4 {
-    margin-block: calc(var(--spacing) * 4);
-  }
   .mr-2 {
     margin-right: calc(var(--spacing) * 2);
   }
@@ -190,9 +183,6 @@
   .h-full {
     height: 100%;
   }
-  .h-screen {
-    height: 100vh;
-  }
   .w-8 {
     width: calc(var(--spacing) * 8);
   }
@@ -201,9 +191,6 @@
   }
   .w-full {
     width: 100%;
-  }
-  .max-w-5xl {
-    max-width: var(--container-5xl);
   }
   .items-center {
     align-items: center;
@@ -221,30 +208,19 @@
       margin-block-end: calc(calc(var(--spacing) * 2) * calc(1 - var(--tw-space-y-reverse)));
     }
   }
-  .overflow-auto {
-    overflow: auto;
-  }
-  .overflow-scroll {
-    overflow: scroll;
-  }
   .rounded-full {
     border-radius: calc(infinity * 1px);
-  }
-  .border {
-    border-style: var(--tw-border-style);
-    border-width: 1px;
-  }
-  .p-2 {
-    padding: calc(var(--spacing) * 2);
   }
   .p-4 {
     padding: calc(var(--spacing) * 4);
   }
-  .px-2 {
-    padding-inline: calc(var(--spacing) * 2);
+  .text-2xl {
+    font-size: var(--text-2xl);
+    line-height: var(--tw-leading, var(--text-2xl--line-height));
   }
-  .px-4 {
-    padding-inline: calc(var(--spacing) * 4);
+  .font-semibold {
+    --tw-font-weight: var(--font-weight-semibold);
+    font-weight: var(--font-weight-semibold);
   }
   .text-sky-600 {
     color: var(--color-sky-600);
@@ -258,16 +234,15 @@
   inherits: false;
   initial-value: 0;
 }
-@property --tw-border-style {
+@property --tw-font-weight {
   syntax: "*";
   inherits: false;
-  initial-value: solid;
 }
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
     *, ::before, ::after, ::backdrop {
       --tw-space-y-reverse: 0;
-      --tw-border-style: solid;
+      --tw-font-weight: initial;
     }
   }
 }
