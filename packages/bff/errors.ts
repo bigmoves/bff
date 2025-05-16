@@ -8,3 +8,14 @@ export class UnauthorizedError<T> extends Error {
     this.ctx = ctx;
   }
 }
+
+export class RateLimitError extends Error {
+  readonly retryAfter?: number;
+  constructor(message: string, retryAfter?: number) {
+    super(message);
+    this.name = "RateLimitError";
+    if (retryAfter) {
+      this.retryAfter = retryAfter;
+    }
+  }
+}

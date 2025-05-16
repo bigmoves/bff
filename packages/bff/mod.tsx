@@ -22,7 +22,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, VNode } from "preact";
 import { render as renderToString } from "preact-render-to-string";
 import { Login } from "./components/Login.tsx";
-import { UnauthorizedError } from "./errors.ts";
+import { RateLimitError, UnauthorizedError } from "./errors.ts";
 import { Jetstream } from "./jetstream.ts";
 import { CSS } from "./styles.ts";
 import type {
@@ -49,7 +49,7 @@ import type {
 } from "./types.d.ts";
 import { hydrateBlobRefs } from "./utils.ts";
 
-export { UnauthorizedError } from "./errors.ts";
+export { RateLimitError, UnauthorizedError } from "./errors.ts";
 export { JETSTREAM } from "./jetstream.ts";
 export type {
   ActorTable,
@@ -101,6 +101,15 @@ export async function bff(opts: BffOptions) {
       if (err instanceof UnauthorizedError) {
         return new Response("Unauthorized", {
           status: 401,
+        });
+      }
+      if (err instanceof RateLimitError) {
+        return new Response(err.message, {
+          status: 429,
+          headers: {
+            ...err.retryAfter && { "Retry-After": err.retryAfter.toString() },
+            "Content-Type": "text/plain",
+          },
         });
       }
       return new Response("Internal Server Error", {
@@ -169,6 +178,14 @@ function createDb(cfg: BffConfig) {
       "collection" TEXT NOT NULL,
       "json" TEXT NOT NULL,
       "indexedAt" TEXT NOT NULL
+    );
+    
+    CREATE TABLE IF NOT EXISTS "rate_limit" (
+      "key" TEXT NOT NULL,
+      "namespace" TEXT NOT NULL,
+      "points" INTEGER NOT NULL,
+      "resetAt" TEXT NOT NULL,
+      PRIMARY KEY ("key", "namespace")
     );
   `);
 
@@ -434,6 +451,7 @@ function composeMiddlewares(
     const backfillCollectionsFn = backfillCollections(idxService);
     const backfillUrisFn = backfillUris(idxService);
     const uploadBlobFn = uploadBlob(queue, agent, blobMetaCache);
+    const rateLimitFn = rateLimit(req, currentUser, db);
 
     const ctx: BffContext = {
       state: {},
@@ -455,6 +473,10 @@ function composeMiddlewares(
       cfg,
       next: async () => new Response(),
       blobMetaCache,
+      rateLimit: rateLimitFn,
+      requireAuth: function () {
+        return requireAuth(this);
+      },
     };
 
     ctx.render = render(ctx, cfg);
@@ -1493,14 +1515,11 @@ async function createQueue(
   } as Queue;
 }
 
-export function requireAuth<T>(
-  ctx: BffContext<T>,
-): asserts ctx is BffContext<T> & {
-  currentUser: NonNullable<BffContext["currentUser"]>;
-} {
+function requireAuth(ctx: BffContext): ActorTable {
   if (!ctx.currentUser) {
     throw new UnauthorizedError("User not authenticated", ctx);
   }
+  return ctx.currentUser;
 }
 
 export async function getInstanceInfo(
@@ -1526,5 +1545,108 @@ export async function getInstanceInfo(
     primaryInstance,
     currentInstance,
     currentIsPrimary: currentInstance === primaryInstance,
+  };
+}
+
+/** Rate limiter function with points system to handle multiple rate limits across different endpoints */
+function rateLimit(
+  req: Request,
+  currentUser: ActorTable | undefined,
+  db: Database,
+) {
+  return (
+    options: {
+      namespace: string;
+      points?: number;
+      limit: number;
+      window: number;
+      key?: string;
+    },
+  ): boolean => {
+    const {
+      namespace,
+      points = 1,
+      limit,
+      window: windowMs,
+      key: customKey,
+    } = options;
+
+    const did = currentUser?.did;
+    const limitKey = customKey || did || req.headers.get("x-forwarded-for") ||
+      "anonymous";
+    const now = new Date();
+    const resetAt = new Date(now.getTime() + windowMs);
+
+    let inTransaction = false;
+
+    try {
+      db.exec("BEGIN TRANSACTION");
+      inTransaction = true;
+
+      const result = db.prepare(
+        `SELECT points, resetAt FROM rate_limit WHERE key = ? AND namespace = ?`,
+      ).get(limitKey, namespace) as
+        | { points: number; resetAt: string }
+        | undefined;
+
+      if (!result) {
+        db.prepare(
+          `INSERT INTO rate_limit (key, namespace, points, resetAt) VALUES (?, ?, ?, ?)`,
+        ).run(limitKey, namespace, points, resetAt.toISOString());
+
+        db.exec("COMMIT");
+        inTransaction = false;
+        return true;
+      }
+
+      const resetTime = new Date(result.resetAt);
+
+      if (now > resetTime) {
+        db.prepare(
+          `UPDATE rate_limit SET points = ?, resetAt = ? WHERE key = ? AND namespace = ?`,
+        ).run(points, resetAt.toISOString(), limitKey, namespace);
+
+        db.exec("COMMIT");
+        inTransaction = false;
+        return true;
+      }
+
+      if (result.points + points > limit) {
+        const retryAfter = Math.ceil(
+          (resetTime.getTime() - now.getTime()) / 1000,
+        );
+        throw new RateLimitError(
+          `Rate limit exceeded for ${namespace}. Try again in ${
+            Math.ceil(
+              (resetTime.getTime() - now.getTime()) / 1000,
+            )
+          } seconds`,
+          retryAfter,
+        );
+      }
+
+      db.prepare(
+        `UPDATE rate_limit SET points = points + ? WHERE key = ? AND namespace = ?`,
+      ).run(points, limitKey, namespace);
+
+      db.exec("COMMIT");
+      inTransaction = false;
+      return true;
+    } catch (error) {
+      if (inTransaction) {
+        try {
+          db.exec("ROLLBACK");
+        } catch (rollbackError) {
+          console.error("Rollback failed:", rollbackError);
+        }
+      }
+
+      if (error instanceof RateLimitError) {
+        throw error;
+      }
+
+      console.error("Rate limit error:", error);
+      throw new Error(`Failed to check rate limit for ${namespace}`);
+    }
   };
 }

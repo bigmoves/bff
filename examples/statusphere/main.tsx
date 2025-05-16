@@ -6,7 +6,6 @@ import {
   JETSTREAM,
   oauth,
   OAUTH_ROUTES,
-  requireAuth,
   RootProps,
   route,
   UnauthorizedError,
@@ -71,7 +70,7 @@ bff({
       );
     }),
     route("/status", ["POST"], async (req, _params, ctx) => {
-      requireAuth(ctx);
+      ctx.requireAuth();
       const formData = await req.formData();
       const status = formData.get("status") as string;
 

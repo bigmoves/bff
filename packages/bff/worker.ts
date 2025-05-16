@@ -190,7 +190,7 @@ async function resizeImage(
   buffer = await resize(maxQuality);
 
   if (buffer.length > MAX_FILE_SIZE) {
-    throw new Error("Unable to compress image below max file size.");
+    throw new Error("Unable to resize image below max file size.");
   }
 
   const metadata = await sharp(buffer).metadata();

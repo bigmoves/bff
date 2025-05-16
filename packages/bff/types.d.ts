@@ -189,6 +189,14 @@ export type BffContext<State = Record<string, unknown>> = {
   render: (children: ComponentChildren) => Response;
   html: (vnode: VNode, headers?: Record<string, string>) => Response;
   redirect: (url: string) => Response;
+  rateLimit: (options: {
+    namespace: string;
+    points?: number;
+    limit: number;
+    window: number;
+    key?: string;
+  }) => boolean;
+  requireAuth: () => ActorTable; // Returns the currentUser if authenticated, throws otherwise
 };
 
 export type onSignedInArgs = {
@@ -233,9 +241,6 @@ export type ProcessImageQueuePayload = QueuePayload & {
     uploadId: string;
     did: string;
     imagePath: string;
-    opts?: {
-      compress?: boolean;
-    };
   };
 };
 
