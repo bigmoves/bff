@@ -13,7 +13,6 @@ import {
 } from "@bigmoves/atproto-oauth-client";
 import { JoseKey } from "@bigmoves/atproto-oauth-client/jose_key.ts";
 import { assert } from "@std/assert";
-import { TtlCache } from "@std/cache";
 import { deleteCookie, getCookies, setCookie } from "@std/http";
 import { serveDir } from "@std/http/file-server";
 import { join } from "@std/path/join";
@@ -31,21 +30,14 @@ import type {
   BffContext,
   BffMiddleware,
   BffOptions,
-  BlobMeta,
   Database,
   HttpMethod,
   IndexService,
   OauthMiddlewareOptions,
-  ProcessImageQueuePayload,
   QueryOptions,
-  Queue,
-  QueueItem,
-  QueueItemResult,
-  QueuePayloads,
   RecordTable,
   RootProps,
   RouteHandler,
-  UploadBlobArgs,
 } from "./types.d.ts";
 import { hydrateBlobRefs } from "./utils.ts";
 
@@ -56,7 +48,7 @@ export type {
   BffContext,
   BffMiddleware,
   BffOptions,
-  BlobMeta,
+  BlobUploader,
   onListenArgs,
   onSignedInArgs,
   RecordTable,
@@ -67,17 +59,12 @@ export type {
 
 export { CSS } from "./styles.ts";
 
-const TEMP_IMAGE_STORAGE = "./image_storage";
-
-const blobMetaCache = new TtlCache<string, BlobMeta>(1000 * 60 * 5); // 5 min
-
 export async function bff(opts: BffOptions) {
   const bffConfig = configureBff(opts);
   const db = createDb(bffConfig);
   const idxService = indexService(db);
   const oauthClient = await createOauthClient(db, bffConfig);
-  const queue = await createQueue(oauthClient, blobMetaCache, bffConfig);
-  const handler = createBffHandler(db, oauthClient, queue, bffConfig);
+  const handler = createBffHandler(db, oauthClient, bffConfig);
   const jetstream = createSubscription(idxService, bffConfig);
 
   if (bffConfig.jetstreamUrl && bffConfig.collections?.length) {
@@ -121,7 +108,7 @@ export async function bff(opts: BffOptions) {
   Deno.addSignalListener("SIGINT", () => {
     console.log("Shutting down...");
     jetstream.disconnect();
-    queue.close();
+    db.close();
     Deno.exit(0);
   });
 }
@@ -393,11 +380,10 @@ const indexService = (db: Database): IndexService => {
 function createBffHandler(
   db: Database,
   oauthClient: AtprotoOAuthClient,
-  queue: Queue,
   cfg: BffConfig,
 ) {
   const inner = handler;
-  const withMiddlewares = composeMiddlewares(db, oauthClient, queue, cfg);
+  const withMiddlewares = composeMiddlewares(db, oauthClient, cfg);
   return function handler(req: Request, connInfo: Deno.ServeHandlerInfo) {
     return withMiddlewares(req, connInfo, inner);
   };
@@ -406,7 +392,6 @@ function createBffHandler(
 function composeMiddlewares(
   db: Database,
   oauthClient: AtprotoOAuthClient,
-  queue: Queue,
   cfg: BffConfig,
 ) {
   return async (
@@ -450,7 +435,7 @@ function composeMiddlewares(
     const deleteRecordFn = deleteRecord(agent, idxService);
     const backfillCollectionsFn = backfillCollections(idxService);
     const backfillUrisFn = backfillUris(idxService);
-    const uploadBlobFn = uploadBlob(queue, agent, blobMetaCache);
+    const uploadBlobFn = uploadBlob(agent);
     const rateLimitFn = rateLimit(req, currentUser, db);
 
     const ctx: BffContext = {
@@ -472,7 +457,6 @@ function composeMiddlewares(
       redirect: redirect(req.headers),
       cfg,
       next: async () => new Response(),
-      blobMetaCache,
       rateLimit: rateLimitFn,
       requireAuth: function () {
         return requireAuth(this);
@@ -1357,209 +1341,22 @@ export function route(
   };
 }
 
-const uploadBlob = (
-  queue: Queue,
+function uploadBlob(
   agent: Agent | undefined,
-  blobMetaCache: TtlCache<string, BlobMeta>,
-) => {
-  return ({ file, dataUrl }: UploadBlobArgs): string => {
-    const uploadId = crypto.randomUUID();
-
-    blobMetaCache.set(uploadId, {
-      dataUrl,
-    });
-
+) {
+  return async (file: File): Promise<string> => {
     if (!agent) {
-      throw new Error("Agent not initialized");
+      throw new Error("Agent is not authenticated");
     }
 
-    if (!file) {
-      throw new Error("No files provided");
+    try {
+      const response = await agent.uploadBlob(file);
+      return response.data.blob.ref.toString();
+    } catch (error) {
+      console.error("Error uploading blob:", error);
+      throw new Error("Failed to upload blob");
     }
-
-    enqueueImage({
-      queue,
-      did: agent.assertDid,
-      file,
-      uploadId,
-    });
-
-    return uploadId.toString();
   };
-};
-
-async function enqueueImage({
-  queue,
-  did,
-  file,
-  uploadId,
-}: {
-  queue: Queue;
-  did: string;
-  file: File;
-  uploadId: string;
-}) {
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  console.log(
-    "Input buffer size:",
-    (buffer.byteLength / 1024 / 1024).toFixed(2) + " Mb",
-  );
-
-  const tempImagePath = join(
-    Deno.cwd(),
-    TEMP_IMAGE_STORAGE,
-  );
-  const imagePath = join(tempImagePath, uploadId);
-  await Deno.mkdir(tempImagePath, { recursive: true });
-  await Deno.writeFile(
-    imagePath,
-    buffer,
-  );
-
-  const payload: ProcessImageQueuePayload = {
-    type: "process_image",
-    data: {
-      uploadId,
-      did,
-      imagePath,
-    },
-  };
-
-  await queue.enqueue(payload);
-
-  return {
-    uploadId,
-    imagePath,
-  };
-}
-
-async function handleBlobAfterProcessing(
-  oauthClient: AtprotoOAuthClient,
-  blobMetaCache: TtlCache<string, BlobMeta>,
-  result: QueueItemResult,
-) {
-  const oauthSession = await oauthClient.restore(result.did);
-  const agent = new Agent(oauthSession);
-
-  const buffer = await Deno.readFile(result.imagePath);
-
-  console.log(
-    "Output buffer size:",
-    (buffer.byteLength / 1024 / 1024).toFixed(2) + " MB",
-  );
-
-  const blobResponse = await agent.uploadBlob(buffer);
-
-  if (!blobResponse) {
-    throw new Error("Failed to upload blob");
-  }
-
-  await Deno.remove(result.imagePath);
-
-  const cid = blobResponse.data.blob.ref.toString();
-
-  const existingBlobMeta = blobMetaCache.get(result.uploadId);
-  const newBlobMeta = {
-    ...existingBlobMeta,
-    blobRef: blobResponse.data.blob,
-    dimensions: result.dimensions,
-  };
-
-  // Adding two entries to the cache
-  // 1. One for the uploadId to be used to track the upload
-  // 2. One for the cid to be used when creating/updating a record
-  blobMetaCache.set(result.uploadId, newBlobMeta);
-  blobMetaCache.set(cid, newBlobMeta);
-}
-
-function createWorker() {
-  const worker = new Worker(
-    new URL("./worker.ts", import.meta.url).href,
-    {
-      type: "module",
-    },
-  );
-  return worker;
-}
-
-async function createQueue(
-  oauthClient: AtprotoOAuthClient,
-  blobMetaCache: TtlCache<string, BlobMeta>,
-  cfg: BffConfig,
-) {
-  const kv = await Deno.openKv(cfg.queueDatabaseUrl);
-  let workerProcessing = false;
-
-  kv.listenQueue(async (message: QueuePayloads) => {
-    if (message.type !== "process_image") return;
-    const now = new Date();
-    const { data } = message;
-
-    const queueItem: QueueItem = {
-      id: data.uploadId,
-      did: data.did,
-      imagePath: data.imagePath,
-      status: "pending",
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await kv.set(["imageQueue", queueItem.id], queueItem);
-    await kv.set([
-      "imageQueueIndex",
-      "pending",
-      now.toISOString(),
-      queueItem.id,
-    ], queueItem.id);
-
-    console.log(`Image enqueued with ID: ${queueItem.id}`);
-
-    ensureWorkerIsRunning();
-  });
-
-  const ensureWorkerIsRunning = () => {
-    if (workerProcessing) return;
-    workerProcessing = true;
-
-    const worker = createWorker();
-
-    worker.onmessage = (e) => {
-      const { type, id, result, error } = e.data;
-      if (type === "complete") {
-        console.log(`Worker completed processing image ${id}`);
-        handleBlobAfterProcessing(oauthClient, blobMetaCache, result);
-      } else if (type === "error") {
-        console.error(
-          `Worker encountered an error processing image ${id}:`,
-          error,
-        );
-      } else if (type === "shutdown") {
-        workerProcessing = false;
-        worker.terminate();
-        console.log("Worker shut down due to empty queue");
-      }
-    };
-
-    worker.onerror = (error) => {
-      console.error("Worker error:", error);
-      workerProcessing = false;
-    };
-
-    worker.postMessage({ command: "start", databaseUrl: cfg.queueDatabaseUrl });
-
-    console.log("Image processor worker started");
-  };
-
-  return {
-    enqueue: async (payload: QueuePayloads) => {
-      await kv.enqueue(payload);
-    },
-    close: () => {
-      kv.close();
-    },
-  } as Queue;
 }
 
 function requireAuth(ctx: BffContext): ActorTable {

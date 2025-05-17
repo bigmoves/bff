@@ -1,8 +1,7 @@
 import type { Agent } from "@atproto/api";
 import type { DidResolver } from "@atproto/identity";
-import type { BlobRef, Lexicons } from "@atproto/lexicon";
+import type { Lexicons } from "@atproto/lexicon";
 import type { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
-import type { TtlCache } from "@std/cache";
 import type { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, FunctionComponent, VNode } from "preact";
 
@@ -62,6 +61,8 @@ export type BffOptions = {
   middlewares?: BffMiddleware[];
   /** The lexicons class imported from codegen. */
   lexicons?: Lexicons;
+  /** Custom blob uploader */
+  blobUploader?: (agent: Agent | undefined) => BlobUploader;
   /** The root element of the app */
   rootElement?: RootElement;
   /** Called when the server starts listening. */
@@ -136,25 +137,14 @@ export type IndexService = {
   getActorByHandle: (handle: string) => ActorTable | undefined;
 };
 
-type BlobMeta = {
-  dataUrl?: string;
-  blobRef?: BlobRef;
-  dimensions?: {
-    width?: number;
-    height?: number;
-  };
-};
-
-export type UploadBlobArgs = {
-  file: File;
-  dataUrl?: string;
-};
+export interface BlobUploader {
+  upload: (file: File) => Promise<string>;
+}
 
 export type BffContext<State = Record<string, unknown>> = {
   state: State;
   didResolver: DidResolver;
   agent?: Agent;
-  blobMetaCache: TtlCache<string, BlobMeta>;
   createRecord: <T>(
     collection: string,
     data: Partial<T>,
@@ -180,7 +170,7 @@ export type BffContext<State = Record<string, unknown>> = {
   backfillUris: (
     uris: string[],
   ) => Promise<void>;
-  uploadBlob: (params: UploadBlobArgs) => string;
+  uploadBlob: (file: File) => Promise<string>;
   indexService: IndexService;
   oauthClient: AtprotoOAuthClient;
   currentUser?: ActorTable;
@@ -232,42 +222,3 @@ export type RouteHandler = (
   params: Record<string, string>,
   ctx: BffContext,
 ) => Promise<Response> | Response;
-
-type QueuePayload = { type: string; data: unknown };
-
-export type ProcessImageQueuePayload = QueuePayload & {
-  type: "process_image";
-  data: {
-    uploadId: string;
-    did: string;
-    imagePath: string;
-  };
-};
-
-export type QueuePayloads = ProcessImageQueuePayload;
-
-type QueueItemResult = {
-  uploadId: string;
-  did: string;
-  imagePath: string;
-  dimensions: {
-    width?: number;
-    height?: number;
-  };
-};
-
-type QueueItem = {
-  id: string;
-  did: string;
-  imagePath: string;
-  status: "pending" | "processing" | "completed" | "failed";
-  result?: QueueItemResult;
-  error?: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type Queue = {
-  enqueue: (payload: QueuePayloads) => Promise<void>;
-  close: () => Promise<void>;
-};

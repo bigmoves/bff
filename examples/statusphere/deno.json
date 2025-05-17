@@ -5,7 +5,7 @@
     "typed-htmx": "npm:typed-htmx@^0.3.1"
   },
   "tasks": {
-    "dev": "deno run -A --unstable-kv --watch main.tsx",
+    "dev": "deno run -A --watch main.tsx",
     "codegen": "deno run -A ../../packages/bff-cli/mod.ts lex"
   },
   "compilerOptions": {

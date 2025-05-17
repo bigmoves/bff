@@ -1,5 +1,7 @@
+/// <reference lib="webworker" />
+
 import sharp from "sharp";
-import type { QueueItem, QueueItemResult } from "./types.d.ts";
+import type { QueueItem, QueueItemResult } from "./queue.ts";
 
 let running = false;
 let workerStartTime: number | undefined;
@@ -111,7 +113,7 @@ async function updateItemStatus(
 }
 
 async function processImage(item: QueueItem) {
-  console.log(`Processing image ${item.id}: ${item.id}`);
+  console.log(`Processing image: ${item.id}`);
 
   const imageBuffer = await Deno.readFile(item.imagePath);
 
@@ -121,7 +123,6 @@ async function processImage(item: QueueItem) {
 
   const result: QueueItemResult = {
     uploadId: item.id,
-    did: item.did,
     imagePath: item.imagePath,
     dimensions,
   };
