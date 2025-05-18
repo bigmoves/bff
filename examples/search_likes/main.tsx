@@ -1,10 +1,14 @@
 import { lexicons } from "$lexicon/lexicons.ts";
+import { ProfileViewBasic } from "$lexicon/types/app/bsky/actor/defs.ts";
 import { Record as Profile } from "$lexicon/types/app/bsky/actor/profile.ts";
+import { isMain as isImages } from "$lexicon/types/app/bsky/embed/images.ts";
 import { Record as Like } from "$lexicon/types/app/bsky/feed/like.ts";
 import { Record as Post } from "$lexicon/types/app/bsky/feed/post.ts";
+import { Un$Typed } from "$lexicon/util.ts";
 import { AtUri } from "@atproto/syntax";
 import {
   bff,
+  BffContext,
   CSS,
   oauth,
   onSignedInArgs,
@@ -14,7 +18,7 @@ import {
 } from "@bigmoves/bff";
 import { Button, Input, Layout, Login } from "@bigmoves/bff/components";
 
-// NOTE: More of a proof of concept. Expensive to gather all post records across the network.
+// NOTE: More of a proof of concept. Expensive to gather all related post records across the network.
 // Though you only need to pull the post records once, and then you can query the index service.
 bff({
   appName: "AT Protocol | Search Bsky Likes App",
@@ -22,6 +26,16 @@ bff({
   lexicons,
   rootElement: Root,
   middlewares: [
+    (_req, ctx) => {
+      if (ctx.currentUser) {
+        const profile = getActorProfile(ctx.currentUser.did, ctx);
+        if (profile) {
+          ctx.state.profile = profile;
+          return ctx.next();
+        }
+      }
+      return ctx.next();
+    },
     oauth({
       LoginComponent: ({ error }) => (
         <div id="login" class="flex justify-center items-center w-full h-full">
@@ -31,7 +45,7 @@ bff({
       onSignedIn: async ({ actor, ctx }: onSignedInArgs) => {
         await ctx.backfillCollections(
           [actor.did],
-          ["app.bsky.feed.like"],
+          ["app.bsky.feed.like", "app.bsky.actor.profile"],
         );
         const { items: likes } = ctx.indexService.getRecords<WithBffMeta<Like>>(
           "app.bsky.feed.like",
@@ -62,7 +76,7 @@ bff({
       const { items: likes } = ctx.indexService.getRecords<WithBffMeta<Like>>(
         "app.bsky.feed.like",
         {
-          orderBy: { field: "createdAt", direction: "desc" },
+          orderBy: [{ field: "createdAt", direction: "desc" }],
           where: [{ field: "did", contains: did }],
         },
       );
@@ -137,6 +151,27 @@ bff({
         return null;
       };
 
+      const postEmbed = (post: WithBffMeta<Post>) => {
+        const embed = post.embed;
+        if (embed?.$type === "app.bsky.embed.images" && isImages(embed)) {
+          return (
+            <div class="flex items-center gap-2">
+              {embed.images.map((i) => (
+                <img
+                  src={imageThumb(
+                    post.did,
+                    i.image.ref.toString(),
+                  )}
+                  alt=""
+                  class="w-16 h-16 object-cover"
+                />
+              ))}
+            </div>
+          );
+        }
+        return null;
+      };
+
       const postsByUri = new Map(posts.map((post) => [post.uri, post]));
       const orderedPosts = postUris
         .map((uri) => postsByUri.get(uri))
@@ -147,11 +182,14 @@ bff({
           {orderedPosts.map((p) => (
             <li key={p.uri}>
               <a
-                class="flex items-center"
+                class="flex"
                 href={postLink(p, handleMap.get(p.uri) ?? "")}
               >
                 {postAuthor(p)}
-                {p.text}
+                <div>
+                  <p>{p.text}</p>
+                  <p>{postEmbed(p)}</p>
+                </div>
               </a>
             </li>
           ))}
@@ -181,7 +219,12 @@ bff({
   ],
 });
 
-function Root(props: Readonly<RootProps>) {
+export type State = {
+  profile?: ProfileViewBasic;
+};
+
+function Root(props: Readonly<RootProps<State>>) {
+  const profile = props.ctx.state.profile;
   return (
     <html lang="en" class="w-full h-full">
       <head>
@@ -199,6 +242,7 @@ function Root(props: Readonly<RootProps>) {
                 <span className="text-sky-600">@</span> likes
               </h1>
             }
+            profile={profile}
           />
           <Layout.Content class="p-4">
             {props.children}
@@ -209,9 +253,39 @@ function Root(props: Readonly<RootProps>) {
   );
 }
 
+function getActorProfile(did: string, ctx: BffContext) {
+  const actor = ctx.indexService.getActor(did);
+  if (!actor) return null;
+  const profileRecord = ctx.indexService.getRecord<WithBffMeta<Profile>>(
+    `at://${did}/app.bsky.actor.profile/self`,
+  );
+  return profileRecord ? profileToView(profileRecord, actor.handle) : null;
+}
+
+function profileToView(
+  record: WithBffMeta<Profile>,
+  handle: string,
+): Un$Typed<ProfileViewBasic> {
+  return {
+    did: record.did,
+    handle,
+    displayName: record.displayName,
+    avatar: record?.avatar
+      ? `https://cdn.bsky.app/img/feed_thumbnail/plain/${record.did}/${record.avatar.ref.toString()}`
+      : undefined,
+  };
+}
+
 function postLink(
   post: WithBffMeta<Post>,
   handle: string,
 ) {
   return `https://bsky.app/profile/${handle}/post/${new AtUri(post.uri).rkey}`;
+}
+
+function imageThumb(
+  did: string,
+  cid: string,
+) {
+  return `https://cdn.bsky.app/img/feed_thumbnail/plain/${did}/${cid}@jpeg`;
 }

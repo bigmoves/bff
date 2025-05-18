@@ -1,5 +1,6 @@
 import { Record as BffBasicProfile } from "$lexicon/types/dev/fly/bffbasic/profile.ts";
 import { BffContext, RouteHandler } from "@bigmoves/bff";
+import { photoProcessor } from "../uploads.tsx";
 
 export const handler: RouteHandler = async (
   req,
@@ -9,7 +10,7 @@ export const handler: RouteHandler = async (
   const formData = await req.formData();
   const displayName = formData.get("displayName") as string;
   const description = formData.get("description") as string;
-  const avatarCid = formData.get("avatarCid") as string;
+  const uploadId = formData.get("uploadId") as string;
 
   if (!ctx.currentUser) {
     return new Response("User not signed in", { status: 401 });
@@ -33,7 +34,7 @@ export const handler: RouteHandler = async (
     {
       displayName,
       description,
-      avatar: ctx.blobMetaCache.get(avatarCid)?.blobRef ??
+      avatar: photoProcessor.getUploadStatus(uploadId)?.blobRef ??
         record.avatar,
     },
   );

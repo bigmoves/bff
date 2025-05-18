@@ -8,6 +8,30 @@ export type MetaDescriptor =
   | { tagName: "meta" | "link"; [name: string]: string }
   | { [name: string]: unknown };
 
+/**
+ * Meta component for setting meta tags in the document head.
+ *
+ * @example
+ * ```tsx
+ * <Meta
+ *   meta={[
+ *     { charset: "utf-8" },
+ *     { title: "My Page Title" },
+ *     { name: "description", content: "My page description" },
+ *     { property: "og:title", content: "My Page Title" },
+ *     { property: "og:description", content: "My page description" },
+ *     { property: "og:image", content: "https://example.com/image.jpg" },
+ *     { property: "og:url", content: "https://example.com" },
+ *     { tagName: "link", rel: "icon", href: "/favicon.ico" },
+ *     { tagName: "link", rel: "stylesheet", href: "/styles.css" },
+ *     { tagName: "meta", name: "viewport", content: "width=device-width, initial-scale=1" },
+ *   ]}
+ * />
+ * ```
+ *
+ * @param meta - An array of meta descriptors.
+ * @returns A JSX element representing the meta tags.
+ */
 export function Meta(
   { meta = [] }: Readonly<{ meta?: MetaDescriptor[] }>,
 ): JSX.Element {

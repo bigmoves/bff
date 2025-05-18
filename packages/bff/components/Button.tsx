@@ -22,7 +22,7 @@ export function Button(props: ButtonProps): JSX.Element {
     "type" in children
   ) {
     return cloneElement(children, {
-      ...props,
+      ...rest,
       ...children.props,
       class: cn(className, children.props.class),
     });

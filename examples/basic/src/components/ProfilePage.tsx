@@ -11,12 +11,12 @@ export function ProfilePage(
 ) {
   return (
     <div>
-      <div class="flex flex-col sm:flex-row justify-between items-start my-8">
+      <div class="flex flex-col sm:flex-row justify-between items-start p-4">
         <div class="flex flex-col">
           <button
             type="button"
             class="flex flex-row items-center gap-2 cursor-pointer border rounded-full w-fit"
-            hx-get={`/modals/avatar/${profile.handle}`}
+            hx-get={`/dialogs/avatar/${profile.handle}`}
             hx-trigger="click"
             hx-target="body"
             hx-swap="afterbegin"
@@ -39,7 +39,7 @@ export function ProfilePage(
               <Button
                 variant="primary"
                 type="button"
-                hx-get="/modals/profile"
+                hx-get="/dialogs/profile"
                 hx-trigger="click"
                 hx-target="body"
                 hx-swap="afterbegin"
@@ -51,7 +51,7 @@ export function ProfilePage(
           )
           : null}
       </div>
-      <div className="my-4">
+      <div className="p-4 my-4">
         <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[1, 2, 3, 4, 5, 6].map((item) => (

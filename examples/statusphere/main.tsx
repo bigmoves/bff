@@ -179,7 +179,7 @@ function Home({ statuses, didHandleMap, profile, myStatus }: Readonly<{
             : (
               <div class="session-form">
                 <div>
-                  <a href={OAUTH_ROUTES.loginPage} hx-boost="true">
+                  <a href={OAUTH_ROUTES.loginPage}>
                     Log in
                   </a>{" "}
                   to set your status!
@@ -187,7 +187,6 @@ function Home({ statuses, didHandleMap, profile, myStatus }: Readonly<{
                 <div>
                   <a
                     href={OAUTH_ROUTES.loginPage}
-                    hx-boost="true"
                     class="button"
                   >
                     Log in

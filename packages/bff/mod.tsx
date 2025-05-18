@@ -1,7 +1,7 @@
 import { Agent } from "@atproto/api";
 import { TID } from "@atproto/common";
 import { type AtprotoData, DidResolver, MemoryCache } from "@atproto/identity";
-import { Lexicons, stringifyLex } from "@atproto/lexicon";
+import { BlobRef, Lexicons, stringifyLex } from "@atproto/lexicon";
 import { OAuthResolverError } from "@atproto/oauth-client";
 import { AtUri, isValidHandle } from "@atproto/syntax";
 import {
@@ -48,7 +48,6 @@ export type {
   BffContext,
   BffMiddleware,
   BffOptions,
-  BlobUploader,
   onListenArgs,
   onSignedInArgs,
   RecordTable,
@@ -166,7 +165,7 @@ function createDb(cfg: BffConfig) {
       "json" TEXT NOT NULL,
       "indexedAt" TEXT NOT NULL
     );
-    
+
     CREATE TABLE IF NOT EXISTS "rate_limit" (
       "key" TEXT NOT NULL,
       "namespace" TEXT NOT NULL,
@@ -236,33 +235,125 @@ const indexService = (db: Database): IndexService => {
 
       if (options?.cursor) {
         try {
+          const orderByClauses = options?.orderBy ||
+            [{ field: "indexedAt", direction: "asc" }];
+
           const decoded = Buffer.from(options.cursor, "base64").toString(
             "utf-8",
           );
-          const [cursorIndexedAt, cursorCid] = decoded.split("|");
+          const cursorParts = decoded.split("|");
 
-          const cursorDirection = options?.orderBy?.direction === "desc"
-            ? "<"
-            : ">";
+          // The last part is always the CID
+          const cursorCid = cursorParts[cursorParts.length - 1];
 
-          query +=
-            ` AND (indexedAt ${cursorDirection} ? OR (indexedAt = ? AND cid ${cursorDirection} ?))`;
-          params.push(cursorIndexedAt, cursorIndexedAt, cursorCid);
+          if (cursorParts.length - 1 !== orderByClauses.length) {
+            console.warn("Cursor format doesn't match orderBy fields count");
+            throw new Error("Invalid cursor format");
+          }
+
+          // Build the WHERE condition for pagination with multiple fields
+          let cursorCondition = "(";
+          const clauses: string[] = [];
+
+          for (let i = 0; i < orderByClauses.length; i++) {
+            const { field, direction = "asc" } = orderByClauses[i];
+            const cursorValue = cursorParts[i];
+            const comparisonOp = direction === "desc" ? "<" : ">";
+
+            // Build progressive equality checks for earlier columns
+            if (i > 0) {
+              let equalityCheck = "(";
+              for (let j = 0; j < i; j++) {
+                const equalField = orderByClauses[j].field;
+                const equalValue = cursorParts[j];
+
+                if (j > 0) equalityCheck += " AND ";
+
+                if (tableColumns.includes(equalField)) {
+                  equalityCheck += `${equalField} = ?`;
+                } else {
+                  equalityCheck += `JSON_EXTRACT(json, '$.${equalField}') = ?`;
+                }
+                params.push(equalValue);
+              }
+              equalityCheck += " AND ";
+
+              // Add the comparison for the current field
+              if (tableColumns.includes(field)) {
+                equalityCheck += `${field} ${comparisonOp} ?`;
+              } else {
+                equalityCheck +=
+                  `JSON_EXTRACT(json, '$.${field}') ${comparisonOp} ?`;
+              }
+              params.push(cursorValue);
+              equalityCheck += ")";
+
+              clauses.push(equalityCheck);
+            } else {
+              // First column is simpler
+              if (tableColumns.includes(field)) {
+                clauses.push(`${field} ${comparisonOp} ?`);
+              } else {
+                clauses.push(
+                  `JSON_EXTRACT(json, '$.${field}') ${comparisonOp} ?`,
+                );
+              }
+              params.push(cursorValue);
+            }
+          }
+
+          // Add final equality check on all columns with CID comparison
+          let finalClause = "(";
+          for (let i = 0; i < orderByClauses.length; i++) {
+            const { field } = orderByClauses[i];
+            const cursorValue = cursorParts[i];
+
+            if (i > 0) finalClause += " AND ";
+
+            if (tableColumns.includes(field)) {
+              finalClause += `${field} = ?`;
+            } else {
+              finalClause += `JSON_EXTRACT(json, '$.${field}') = ?`;
+            }
+            params.push(cursorValue);
+          }
+
+          const lastDirection =
+            orderByClauses[orderByClauses.length - 1]?.direction || "asc";
+          const cidComparisonOp = lastDirection === "desc" ? "<" : ">";
+          finalClause += ` AND cid ${cidComparisonOp} ?`;
+          params.push(cursorCid);
+          finalClause += ")";
+
+          clauses.push(finalClause);
+
+          cursorCondition += clauses.join(" OR ") + ")";
+          query += ` AND ${cursorCondition}`;
         } catch (error) {
           console.warn("Invalid cursor format", error);
         }
       }
 
-      const orderField = options?.orderBy?.field || "indexedAt";
-      const orderDirection = options?.orderBy?.direction || "asc";
+      const orderByClauses = options?.orderBy ||
+        [{ field: "indexedAt", direction: "asc" }];
 
-      if (tableColumns.includes(orderField)) {
-        query += ` ORDER BY ${orderField} ${orderDirection}`;
-        query += `, cid ${orderDirection}`;
-      } else {
-        query +=
-          ` ORDER BY JSON_EXTRACT(json, '$.${orderField}') ${orderDirection}`;
-        query += `, cid ${orderDirection}`;
+      if (orderByClauses.length > 0) {
+        const orderParts: string[] = [];
+
+        for (const { field, direction = "asc" } of orderByClauses) {
+          if (tableColumns.includes(field)) {
+            orderParts.push(`${field} ${direction}`);
+          } else {
+            orderParts.push(`JSON_EXTRACT(json, '$.${field}') ${direction}`);
+          }
+        }
+
+        // Always include cid in the ORDER BY to ensure consistent ordering
+        const lastDirection =
+          orderByClauses[orderByClauses.length - 1]?.direction || "asc";
+        orderParts.push(`cid ${lastDirection}`);
+
+        query += ` ORDER BY ${orderParts.join(", ")}`;
       }
 
       if (options?.limit && options.limit > 0) {
@@ -275,7 +366,38 @@ const indexService = (db: Database): IndexService => {
       let nextCursor: string | undefined;
       if (rows.length > 0) {
         const lastRow = rows[rows.length - 1];
-        const rawCursor = `${lastRow.indexedAt}|${lastRow.cid}`;
+        // Convert single item to array if needed for backward compatibility
+        const orderByClauses = options?.orderBy ||
+          [{ field: "indexedAt", direction: "asc" }];
+
+        // Extract all values needed for the cursor
+        const cursorParts: string[] = [];
+
+        for (const { field } of orderByClauses) {
+          if (tableColumns.includes(field)) {
+            // Direct column access
+            cursorParts.push(String(lastRow[field as keyof RecordTable]));
+          } else {
+            // JSON field access
+            const parsedJson = JSON.parse(lastRow.json);
+            const fieldPath = field.split(".");
+            let value = parsedJson;
+
+            // Navigate nested fields
+            for (const key of fieldPath) {
+              if (value === undefined || value === null) break;
+              value = value[key];
+            }
+
+            cursorParts.push(String(value));
+          }
+        }
+
+        // Always add CID as the final part
+        cursorParts.push(lastRow.cid);
+
+        // Join all parts and encode
+        const rawCursor = cursorParts.join("|");
         nextCursor = Buffer.from(rawCursor, "utf-8").toString("base64");
       }
 
@@ -922,7 +1044,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         const error = err instanceof OAuthResolverError
           ? err.message
           : "couldn't initiate login";
-        return new Response(error, { status: 400 });
+        return ctx.html(<LoginComponent error={error} />);
       }
     }
 
@@ -1344,14 +1466,14 @@ export function route(
 function uploadBlob(
   agent: Agent | undefined,
 ) {
-  return async (file: File): Promise<string> => {
+  return async (file: File): Promise<BlobRef> => {
     if (!agent) {
       throw new Error("Agent is not authenticated");
     }
 
     try {
       const response = await agent.uploadBlob(file);
-      return response.data.blob.ref.toString();
+      return response.data.blob;
     } catch (error) {
       console.error("Error uploading blob:", error);
       throw new Error("Failed to upload blob");

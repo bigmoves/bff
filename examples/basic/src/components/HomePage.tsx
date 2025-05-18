@@ -19,7 +19,7 @@ export function HomePage(
           create an account
         </button>
         {", "}
-        <a href="/login" hx-boost="true" class="text-sky-600 hover:underline">
+        <a href="/login" class="text-sky-600 hover:underline">
           sign in
         </a>
         {", and "}
@@ -27,7 +27,6 @@ export function HomePage(
           ? (
             <a
               href={`/profile/${profile?.handle}`}
-              hx-boost="true"
               class="text-sky-600 hover:underline"
             >
               edit your profile
@@ -36,7 +35,6 @@ export function HomePage(
           : (
             <a
               href="/login"
-              hx-boost="true"
               class="text-sky-600 hover:underline"
             >
               edit your profile

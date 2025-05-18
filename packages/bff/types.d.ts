@@ -1,6 +1,6 @@
 import type { Agent } from "@atproto/api";
 import type { DidResolver } from "@atproto/identity";
-import type { Lexicons } from "@atproto/lexicon";
+import type { BlobRef, Lexicons } from "@atproto/lexicon";
 import type { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
 import type { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, FunctionComponent, VNode } from "preact";
@@ -61,8 +61,6 @@ export type BffOptions = {
   middlewares?: BffMiddleware[];
   /** The lexicons class imported from codegen. */
   lexicons?: Lexicons;
-  /** Custom blob uploader */
-  blobUploader?: (agent: Agent | undefined) => BlobUploader;
   /** The root element of the app */
   rootElement?: RootElement;
   /** Called when the server starts listening. */
@@ -108,14 +106,21 @@ export type BffConfig = BffOptions & EnvConfig & {
   rootElement: RootElement;
 };
 
+export type OrderByOption = {
+  field: string;
+  direction?: "asc" | "desc";
+};
+
+export type WhereOption = {
+  field: string;
+  equals?: string;
+  contains?: string;
+  in?: string[];
+};
+
 export type QueryOptions = {
-  orderBy?: {
-    field: string;
-    direction?: "asc" | "desc";
-  };
-  where?: Array<
-    { field: string; equals?: string; contains?: string; in?: string[] }
-  >;
+  orderBy?: OrderByOption[];
+  where?: WhereOption[];
   limit?: number;
   cursor?: string;
 };
@@ -136,10 +141,6 @@ export type IndexService = {
   getActor: (did: string) => ActorTable | undefined;
   getActorByHandle: (handle: string) => ActorTable | undefined;
 };
-
-export interface BlobUploader {
-  upload: (file: File) => Promise<string>;
-}
 
 export type BffContext<State = Record<string, unknown>> = {
   state: State;
@@ -170,7 +171,7 @@ export type BffContext<State = Record<string, unknown>> = {
   backfillUris: (
     uris: string[],
   ) => Promise<void>;
-  uploadBlob: (file: File) => Promise<string>;
+  uploadBlob: (file: File) => Promise<BlobRef>;
   indexService: IndexService;
   oauthClient: AtprotoOAuthClient;
   currentUser?: ActorTable;

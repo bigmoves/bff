@@ -1,12 +1,12 @@
-import { BffMiddleware, route, uploadHandler } from "@bigmoves/bff";
-import { AvatarOob } from "./components/AvatarOob.tsx";
+import { BffMiddleware, route } from "@bigmoves/bff";
 import { NotFoundPage } from "./components/NotFoundPage.tsx";
+import { handler as dialogsAvatar } from "./routes/dialogs_avatar.tsx";
+import { handler as dialogsProfile } from "./routes/dialogs_profile.tsx";
 import { handler as index } from "./routes/index.tsx";
-import { handler as modalsAvatar } from "./routes/modals_avatar.tsx";
-import { handler as modalsProfile } from "./routes/modals_profile.tsx";
 import { handler as onboard } from "./routes/onboard.tsx";
 import { handler as profile } from "./routes/profile.tsx";
 import { handler as profileUpdate } from "./routes/profile_update.tsx";
+import { avatarUploadRoutes } from "./uploads.tsx";
 
 export const routes: BffMiddleware[] = [
   // pages
@@ -15,16 +15,14 @@ export const routes: BffMiddleware[] = [
   route("/onboard", onboard),
 
   // handlers
-  route(
-    "/uploads/avatar",
-    ["POST"],
-    uploadHandler(([blobMeta]) => <AvatarOob {...blobMeta} />),
-  ),
   route("/profile", ["POST"], profileUpdate),
 
   // ui
-  route("/modals/profile", modalsProfile),
-  route("/modals/avatar/:handle", modalsAvatar),
+  route("/dialogs/profile", dialogsProfile),
+  route("/dialogs/avatar/:handle", dialogsAvatar),
+
+  // uploads
+  ...avatarUploadRoutes(),
 
   // not found
   route("*", ["GET"], (req, _params, ctx) => {

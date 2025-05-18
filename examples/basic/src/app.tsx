@@ -22,13 +22,13 @@ export function Root(props: RootProps<State>) {
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
         <link rel="stylesheet" href="/static/styles.css" />
       </head>
-      <body class="h-full w-full">
+      <body>
         <Layout>
           <Layout.Nav
             heading={
-              <>
+              <h1 class="text-2xl font-semibold">
                 <span className="text-sky-600">@</span> bff
-              </>
+              </h1>
             }
             profile={props.ctx.state.profile}
           />

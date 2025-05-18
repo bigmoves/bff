@@ -1,7 +1,7 @@
 import { Record as BffBasicProfile } from "$lexicon/types/dev/fly/bffbasic/profile.ts";
 import { BffContext, RouteHandler } from "@bigmoves/bff";
-import { ProfileModal } from "../components/ProfileModal.tsx";
 import type { State } from "../app.tsx";
+import { ProfileDialog } from "../components/ProfileDialog.tsx";
 
 export const handler: RouteHandler = (
   _req,
@@ -18,7 +18,7 @@ export const handler: RouteHandler = (
   if (!profileRecord) return ctx.next();
 
   return ctx.html(
-    <ProfileModal
+    <ProfileDialog
       profile={ctx.state.profile}
       profileRecord={profileRecord}
     />,

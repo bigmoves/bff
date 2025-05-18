@@ -7,7 +7,7 @@ export const handler: RouteHandler = (
 ) => {
   return ctx.render(
     <div
-      hx-get="/modals/profile"
+      hx-get="/dialogs/profile"
       hx-trigger="load"
       hx-target="body"
       hx-swap="afterbegin"

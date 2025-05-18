@@ -23,9 +23,10 @@ bff({
   lexicons,
   rootElement: Root,
   onListen: async ({ indexService }: onListenArgs) => {
-    await backfillCollections(
-      indexService,
-    )(["did:plc:wshs7t2adsemcrrd4snkeqli"], ["sh.tangled.repo"]);
+    await backfillCollections(indexService)(
+      ["did:plc:wshs7t2adsemcrrd4snkeqli"],
+      ["sh.tangled.repo"],
+    );
   },
   middlewares: [
     oauth({
@@ -35,21 +36,14 @@ bff({
         </div>
       ),
       onSignedIn: async ({ actor, ctx }) => {
-        await ctx.backfillCollections([actor.did], [
-          "sh.tangled.feed.star",
-        ]);
+        await ctx.backfillCollections([actor.did], ["sh.tangled.feed.star"]);
         return "/";
       },
     }),
     route("/", async (_req, _params, ctx) => {
       const { items: repos } = ctx.indexService.getRecords<WithBffMeta<Repo>>(
         "sh.tangled.repo",
-        {
-          orderBy: {
-            field: "addedAt",
-            direction: "desc",
-          },
-        },
+        { orderBy: [{ field: "addedAt", direction: "desc" }] },
       );
 
       const reposWithActorAndTrees = await getReposWithActorAndTrees(
@@ -60,24 +54,20 @@ bff({
       return ctx.render(
         <ul className="space-y-8">
           {reposWithActorAndTrees.map((repo) => (
-            <li
-              key={repo.cid}
-            >
+            <li key={repo.cid}>
               <div className="py-4 flex justify-between items-center">
                 <div>
-                  <div className="text-xl font-semibold text-gray-700">
+                  <div className="text-xl font-semibold">
                     <a href={tangledLink(repo.handle)} target="_blank">
                       @{repo.handle}
                     </a>
-                    <span className="text-gray-400 px-2">/</span>
+                    <span className="px-2">/</span>
                     <a href={tangledLink(repo.handle, repo.name)}>
                       {repo.name}
                     </a>
                   </div>
                   {repo.description && (
-                    <p className="mt-1 text-gray-600">
-                      {repo.description}
-                    </p>
+                    <p className="mt-1">{repo.description}</p>
                   )}
                 </div>
                 <form hx-post="/star" hx-swap="innerHTML" hx-target="this">
@@ -88,7 +78,7 @@ bff({
                 {repo.tree
                   ? (
                     <pre className="p-4 overflow-x-auto text-gray-200 font-mono text-sm">
-                {repo.tree}
+                    {repo.tree}
                     </pre>
                   )
                   : <p className="p-4">Tree generation failed</p>}
@@ -109,10 +99,12 @@ bff({
       const { items: stars } = ctx.indexService.getRecords<WithBffMeta<Star>>(
         "sh.tangled.feed.star",
         {
-          where: [{
-            field: "subject",
-            equals: repoUri,
-          }],
+          where: [
+            {
+              field: "subject",
+              equals: repoUri,
+            },
+          ],
         },
       );
       const star = stars[0];
@@ -122,13 +114,10 @@ bff({
         return ctx.html(<StarFormInner uri={repoUri} starred={false} />);
       }
 
-      await ctx.createRecord<Star>(
-        "sh.tangled.feed.star",
-        {
-          subject: repoUri,
-          createdAt: new Date().toISOString(),
-        },
-      );
+      await ctx.createRecord<Star>("sh.tangled.feed.star", {
+        subject: repoUri,
+        createdAt: new Date().toISOString(),
+      });
 
       return ctx.html(<StarFormInner uri={repoUri} starred />);
     }),
@@ -163,35 +152,26 @@ function Root(props: RootProps) {
         <Layout>
           <Layout.Nav
             heading={
-              <>
+              <h1 class="text-2xl font-semibold">
                 <span className="text-sky-600">@</span> tangled ascii
-              </>
+              </h1>
             }
           />
-          <Layout.Content class="p-4">
-            {children}
-          </Layout.Content>
+          <Layout.Content class="p-4">{children}</Layout.Content>
         </Layout>
       </body>
     </html>
   );
 }
 
-function StarFormInner(
-  { uri, starred }: Readonly<{ uri: string; starred: boolean }>,
-) {
+function StarFormInner({
+  uri,
+  starred,
+}: Readonly<{ uri: string; starred: boolean }>) {
   return (
     <>
-      <input
-        type="hidden"
-        name="repoUri"
-        value={uri}
-      />
-      <input
-        type="hidden"
-        name="starred"
-        value={String(starred)}
-      />
+      <input type="hidden" name="repoUri" value={uri} />
+      <input type="hidden" name="starred" value={String(starred)} />
       <button type="submit">
         <StarIcon starred={starred} />
       </button>
@@ -288,18 +268,15 @@ async function getReposWithActorAndTrees(
     const userDid = ctx.currentUser?.did;
     let stars: Star[] = [];
     if (userDid) {
-      const results = ctx.indexService.getRecords(
-        "sh.tangled.feed.star",
-        {
-          where: [
-            {
-              field: "subject",
-              equals: repo.uri,
-            },
-            { field: "did", equals: userDid },
-          ],
-        },
-      );
+      const results = ctx.indexService.getRecords("sh.tangled.feed.star", {
+        where: [
+          {
+            field: "subject",
+            equals: repo.uri,
+          },
+          { field: "did", equals: userDid },
+        ],
+      });
       results.items = stars;
     }
     const starred = Boolean(stars[0]);

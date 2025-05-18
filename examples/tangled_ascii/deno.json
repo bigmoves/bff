@@ -15,7 +15,8 @@
     "codegen": "deno run -A ../../packages/bff-cli/mod.ts lex"
   },
   "compilerOptions": {
-    "jsx": "react-jsx",
-    "jsxImportSource": "preact"
+    "jsx": "precompile",
+    "jsxImportSource": "preact",
+    "jsxPrecompileSkipElements": ["a"]
   }
 }

@@ -21,7 +21,6 @@ export function NotFoundPage() {
           <a
             href="/"
             class="w-full sm:w-fit"
-            hx-boost="true"
           >
             Return Home
           </a>

@@ -31,7 +31,7 @@ bff({
     route("/", (_req, _params, ctx) => {
       const results = ctx.indexService.getRecords<Entry>(
         "com.whtwnd.blog.entry",
-        { orderBy: { field: "createdAt", direction: "asc" } },
+        { orderBy: [{ field: "createdAt", direction: "asc" }] },
       );
 
       const title = "AT Protocol Blog";
@@ -48,10 +48,7 @@ bff({
             return (
               <ul key={entry.uri}>
                 <li>
-                  <a
-                    href={`/posts/${new AtUri(entry.uri).rkey}`}
-                    hx-boost="true"
-                  >
+                  <a href={`/posts/${new AtUri(entry.uri).rkey}`}>
                     {entry.title}
                   </a>
                 </li>
@@ -83,7 +80,7 @@ bff({
       return ctx.render(
         <main>
           <br />
-          <a href="/" hx-boost="true">
+          <a href="/">
             Back
           </a>
           <h1>{entry.title}</h1>

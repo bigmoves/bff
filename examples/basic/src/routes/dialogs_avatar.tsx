@@ -1,5 +1,5 @@
 import { BffContext, RouteHandler } from "@bigmoves/bff";
-import { AvatarModal } from "../components/AvatarModal.tsx";
+import { AvatarDialog } from "../components/AvatarDialog.tsx";
 import { getActorProfile } from "../utils.ts";
 
 export const handler: RouteHandler = (
@@ -15,7 +15,7 @@ export const handler: RouteHandler = (
   if (!profile) return ctx.next();
 
   return ctx.html(
-    <AvatarModal
+    <AvatarDialog
       profile={profile}
     />,
   );

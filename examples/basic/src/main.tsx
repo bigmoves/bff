@@ -9,6 +9,7 @@ bff({
   appName: "AT Protocol App",
   collections: ["dev.fly.bffbasic.profile"],
   jetstreamUrl: JETSTREAM.WEST_1,
+  databaseUrl: "basic.db",
   lexicons,
   rootElement: Root,
   middlewares: [

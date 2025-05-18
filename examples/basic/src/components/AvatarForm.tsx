@@ -1,10 +1,12 @@
 type Props = Readonly<{ src?: string; alt?: string }>;
 
-export function AvatarForm({ src, alt }: Props) {
+export function AvatarForm(
+  { src, alt }: Readonly<{ src?: string; alt?: string }>,
+) {
   return (
     <form
       id="avatar-file-form"
-      hx-post="/uploads/avatar"
+      hx-post="/actions/avatar/upload-start"
       hx-target="#image-preview"
       hx-swap="innerHTML"
       hx-encoding="multipart/form-data"
@@ -12,8 +14,8 @@ export function AvatarForm({ src, alt }: Props) {
     >
       <label htmlFor="file">
         <span class="sr-only">Upload avatar</span>
-        <div class="border rounded-full border-slate-900 w-16 h-16 mx-auto mb-2 relative my-2 cursor-pointer">
-          <div class="absolute bottom-0 right-0 bg-slate-800 rounded-full w-5 h-5 flex items-center justify-center">
+        <div class="border rounded-full border-zinc-900 w-16 h-16 mx-auto mb-2 relative my-2 cursor-pointer">
+          <div class="absolute bottom-0 right-0 bg-zinc-800 rounded-full w-5 h-5 flex items-center justify-center z-10">
             <i class="fa-solid fa-camera text-white text-xs"></i>
           </div>
           <div id="image-preview" class="w-full h-full">

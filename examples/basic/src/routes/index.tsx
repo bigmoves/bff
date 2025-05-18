@@ -1,6 +1,6 @@
 import { BffContext, RouteHandler } from "@bigmoves/bff";
+import { State } from "../app.tsx";
 import { HomePage } from "../components/HomePage.tsx";
-import { State } from "../main.tsx";
 
 export const handler: RouteHandler = (
   _req,

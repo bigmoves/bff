@@ -1,6 +1,6 @@
 import { ProfileView } from "$lexicon/types/dev/fly/bffbasic/defs.ts";
 import { Record as BffBasicProfile } from "$lexicon/types/dev/fly/bffbasic/profile.ts";
-import { Button, Input, Textarea } from "@bigmoves/bff/components";
+import { Button, Dialog, Input, Textarea } from "@bigmoves/bff/components";
 import { AvatarForm } from "./AvatarForm.tsx";
 
 type Props = Readonly<{
@@ -8,24 +8,14 @@ type Props = Readonly<{
   profileRecord: BffBasicProfile;
 }>;
 
-export function ProfileModal(
+export function ProfileDialog(
   { profile, profileRecord }: Props,
 ) {
   return (
-    <div
-      id="modal"
-      _="on closeModal remove me"
-      class="fixed top-0 bottom-0 right-0 left-0 flex items-center justify-center"
-    >
-      <div
-        _="on click trigger closeModal"
-        class="absolute top-0 left-0 right-0 bottom-0 bg-black/80"
-      >
-      </div>
-      <div class="w-[400px] bg-white flex flex-col p-4 z-10">
-        <h1 class="text-lg font-semibold text-center w-full mb-2">
-          Edit my profile
-        </h1>
+    <Dialog>
+      <Dialog.Content class="relative">
+        <Dialog.X class="fill-zinc-950" />
+        <Dialog.Title>Edit my profile</Dialog.Title>
         <div>
           <AvatarForm
             src={profile.avatar}
@@ -35,7 +25,7 @@ export function ProfileModal(
         <form
           hx-post="/profile"
           hx-swap="none"
-          _="on htmx:afterOnLoad trigger closeModal"
+          _="on htmx:afterOnLoad trigger closeDialog"
         >
           <div id="image-input">
             <input
@@ -74,16 +64,11 @@ export function ProfileModal(
           >
             Update
           </Button>
-          <Button
-            variant="secondary"
-            type="button"
-            class="btn btn-secondary w-full"
-            _="on click trigger closeModal"
-          >
+          <Dialog.Close class="w-full">
             Cancel
-          </Button>
+          </Dialog.Close>
         </form>
-      </div>
-    </div>
+      </Dialog.Content>
+    </Dialog>
   );
 }

@@ -14,7 +14,8 @@
     "dev:tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./input.css -o ./static/styles.css --watch"
   },
   "compilerOptions": {
-    "jsx": "react-jsx",
-    "jsxImportSource": "preact"
+    "jsx": "precompile",
+    "jsxImportSource": "preact",
+    "jsxPrecompileSkipElements": ["a"]
   }
 }
