@@ -55,7 +55,7 @@ const LayoutNav: FunctionalComponent<LayoutNavProps> = (
   return (
     <nav
       class={cn(
-        "tw:w-full tw:border-b tw:border-slate-950 tw:flex tw:justify-between tw:items-center tw:px-4 tw:h-14",
+        "tw:w-full tw:border-b tw:border-zinc-950 tw:flex tw:justify-between tw:items-center tw:px-4 tw:h-14",
         classProp,
       )}
       {...props}
@@ -74,7 +74,7 @@ const LayoutNav: FunctionalComponent<LayoutNavProps> = (
               </form>
               <Button asChild variant="secondary" class="tw:relative tw:pl-2">
                 <a href="/notifications">
-                  <i class="fas fa-bell tw:text-slate-50" />
+                  <i class="fas fa-bell tw:text-zinc-950 tw:dark-zinc-50" />
                   {hasNotifications
                     ? (
                       <span class="tw:absolute tw:inline-flex tw:items-center tw:justify-center tw:w-3 tw:h-3 tw:text-xs tw:font-bold tw:text-white tw:bg-sky-500 tw:rounded-full tw:top-1 tw:right-1" />
