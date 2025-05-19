@@ -1,7 +1,7 @@
 import { Agent } from "@atproto/api";
 import { TID } from "@atproto/common";
 import { type AtprotoData, DidResolver, MemoryCache } from "@atproto/identity";
-import { BlobRef, Lexicons, stringifyLex } from "@atproto/lexicon";
+import { type BlobRef, Lexicons, stringifyLex } from "@atproto/lexicon";
 import { OAuthResolverError } from "@atproto/oauth-client";
 import { AtUri, isValidHandle } from "@atproto/syntax";
 import {
@@ -174,6 +174,16 @@ function createDb(cfg: BffConfig) {
       PRIMARY KEY ("key", "namespace")
     );
   `);
+
+  // @TODO: Move this to the actor create table statement once there's a built
+  // in solution for full sync (don't want to break existing tables)
+  const exists = db.prepare(`
+    SELECT 1 FROM pragma_table_info('actor') WHERE name = 'lastSeenNotifs'
+  `).get();
+
+  if (!exists) {
+    db.prepare(`ALTER TABLE actor ADD COLUMN lastSeenNotifs TEXT`).run();
+  }
 
   return db;
 }
@@ -496,6 +506,22 @@ const indexService = (db: Database): IndexService => {
       );
       return result as ActorTable | undefined;
     },
+    getMentioningUris: (did: string): string[] => {
+      const pattern = `%at://${did}%`;
+      const result = db
+        .prepare(`
+          SELECT uri FROM record
+          WHERE json LIKE ? AND did != ?
+          ORDER BY json_extract(json, '$.createdAt') DESC
+        `)
+        .all(pattern, did) as { uri: string }[];
+      return result.map((r) => r.uri);
+    },
+    updateActor: (did: string, lastSeenNotifs: string) => {
+      db.prepare(
+        `UPDATE actor SET lastSeenNotifs = ? WHERE did = ?`,
+      ).run(lastSeenNotifs, did);
+    },
   };
 };
 
@@ -559,6 +585,8 @@ function composeMiddlewares(
     const backfillUrisFn = backfillUris(idxService);
     const uploadBlobFn = uploadBlob(agent);
     const rateLimitFn = rateLimit(req, currentUser, db);
+    const getNotificationsFn = getNotifications(currentUser, idxService);
+    const updateSeenFn = updateSeen(currentUser, idxService);
 
     const ctx: BffContext = {
       state: {},
@@ -583,6 +611,8 @@ function composeMiddlewares(
       requireAuth: function () {
         return requireAuth(this);
       },
+      getNotifications: getNotificationsFn,
+      updateSeen: updateSeenFn,
     };
 
     ctx.render = render(ctx, cfg);
@@ -1614,5 +1644,43 @@ function rateLimit(
       console.error("Rate limit error:", error);
       throw new Error(`Failed to check rate limit for ${namespace}`);
     }
+  };
+}
+
+function getNotifications(
+  currentUser: ActorTable | undefined,
+  indexService: IndexService,
+): <T extends Record<string, unknown>>() => T[] {
+  return function <T extends Record<string, unknown>>(): T[] {
+    if (!currentUser) {
+      return [];
+    }
+
+    const mentions = indexService.getMentioningUris(currentUser.did);
+    const notifications: T[] = [];
+
+    for (const uri of mentions) {
+      const record = indexService.getRecord(uri);
+      if (record) {
+        notifications.push(record as T);
+      }
+    }
+
+    return notifications;
+  };
+}
+
+function updateSeen(
+  currentUser: ActorTable | undefined,
+  indexService: IndexService,
+) {
+  return () => {
+    if (!currentUser) {
+      return;
+    }
+    indexService.updateActor(
+      currentUser.did,
+      new Date().toISOString(),
+    );
   };
 }

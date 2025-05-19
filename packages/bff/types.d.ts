@@ -10,6 +10,7 @@ export type Database = DatabaseSync;
 export type ActorTable = {
   did: string;
   handle: string;
+  lastSeenNotifs?: string;
   indexedAt: string;
 };
 
@@ -140,6 +141,10 @@ export type IndexService = {
   insertActor: (actor: ActorTable) => void;
   getActor: (did: string) => ActorTable | undefined;
   getActorByHandle: (handle: string) => ActorTable | undefined;
+  getMentioningUris: (
+    did: string,
+  ) => string[];
+  updateActor: (did: string, lastSeenNotifs: string) => void;
 };
 
 export type BffContext<State = Record<string, unknown>> = {
@@ -188,6 +193,8 @@ export type BffContext<State = Record<string, unknown>> = {
     key?: string;
   }) => boolean;
   requireAuth: () => ActorTable; // Returns the currentUser if authenticated, throws otherwise
+  getNotifications: <T extends Record<string, unknown>>() => T[];
+  updateSeen: () => void;
 };
 
 export type onSignedInArgs = {
