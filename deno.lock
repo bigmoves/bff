@@ -1886,8 +1886,8 @@
         "dependencies": [
           "jsr:@std/cache@0.2",
           "jsr:@std/path@^1.0.8",
-          "npm:@atproto/api@~0.14.19",
-          "npm:@atproto/lexicon@~0.4.10",
+          "npm:@atproto/api@~0.15.7",
+          "npm:@atproto/lexicon@~0.4.11",
           "npm:sharp@~0.34.1"
         ]
       }
