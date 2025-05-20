@@ -8,10 +8,14 @@ export async function onSignedIn({
   actor,
   ctx,
 }: onSignedInArgs) {
-  await ctx.backfillCollections([actor.did], [
-    ...ctx.cfg.collections!,
-    "app.bsky.actor.profile",
-  ]);
+  await ctx.backfillCollections({
+    collections: [],
+    externalCollections: [
+      "dev.fly.bffbasic.profile",
+      "app.bsky.actor.profile",
+    ],
+    repos: [actor.did],
+  });
 
   const profileResults = ctx.indexService.getRecords<ProfileRecord>(
     "dev.fly.bffbasic.profile",

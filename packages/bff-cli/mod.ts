@@ -1,3 +1,4 @@
+import { backfillCollections, bff } from "@bigmoves/bff";
 import { parseArgs } from "@std/cli/parse-args";
 import { join, resolve } from "@std/path";
 
@@ -54,7 +55,12 @@ declare module "preact" {
 if (import.meta.main) {
   const flags = parseArgs(Deno.args, {
     boolean: ["help"],
-    string: ["unstable-lexicons"],
+    string: [
+      "db",
+      "collections",
+      "external-collections",
+      "unstable-lexicons",
+    ],
     alias: { h: "help" },
     "--": true,
   });
@@ -109,6 +115,24 @@ if (import.meta.main) {
         "./input.css",
         `@import "tailwindcss";`,
       );
+      break;
+    }
+    case "sync": {
+      bff({
+        appName: "CLI Sync",
+        databaseUrl: flags.db,
+        onListen: async ({ indexService }) => {
+          await backfillCollections(
+            indexService,
+          )({
+            collections: flags.collections ? flags.collections.split(",") : [],
+            externalCollections: flags["external-collections"]
+              ? flags["external-collections"].split(",")
+              : [],
+          });
+          Deno.exit(0);
+        },
+      });
       break;
     }
     default:
@@ -216,6 +240,7 @@ function printHelp(): void {
     "  generate-jwks             Generate private keys and save to .env file",
   );
   console.log("  tailwind                  Install and set up Tailwind CSS");
+  console.log("  sync                      Sync collections to the database");
   console.log("\nOptional flags:");
   console.log("  -h, --help                Display help");
   Deno.exit(0);

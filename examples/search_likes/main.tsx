@@ -43,10 +43,11 @@ bff({
         </div>
       ),
       onSignedIn: async ({ actor, ctx }: onSignedInArgs) => {
-        await ctx.backfillCollections(
-          [actor.did],
-          ["app.bsky.feed.like", "app.bsky.actor.profile"],
-        );
+        await ctx.backfillCollections({
+          repos: [actor.did],
+          collections: [],
+          externalCollections: ["app.bsky.feed.like", "app.bsky.actor.profile"],
+        });
         const { items: likes } = ctx.indexService.getRecords<WithBffMeta<Like>>(
           "app.bsky.feed.like",
         );

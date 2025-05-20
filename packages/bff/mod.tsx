@@ -13,6 +13,7 @@ import {
 } from "@bigmoves/atproto-oauth-client";
 import { JoseKey } from "@bigmoves/atproto-oauth-client/jose_key.ts";
 import { assert } from "@std/assert";
+import * as colors from "@std/fmt/colors";
 import { deleteCookie, getCookies, setCookie } from "@std/http";
 import { serveDir } from "@std/http/file-server";
 import { join } from "@std/path/join";
@@ -78,7 +79,18 @@ export async function bff(opts: BffOptions) {
   Deno.serve({
     port: bffConfig.port,
     onListen({ port, hostname }) {
-      console.log(`Server started at http://${hostname}:${port}`);
+      if (hostname === "0.0.0.0") {
+        hostname = "localhost";
+      }
+      console.log();
+      console.log(
+        colors.bgRgb8(colors.rgb8(" ✨ BFF ready ", 0), 75),
+      );
+      const localLabel = colors.bold("Local:");
+      const address = colors.cyan(
+        `http://${hostname}:${port}`,
+      );
+      console.log(`    ${localLabel}  ${address}`);
     },
     onError: (err) => {
       if (bffConfig.onError) {
@@ -105,7 +117,7 @@ export async function bff(opts: BffOptions) {
   }, handler);
 
   Deno.addSignalListener("SIGINT", () => {
-    console.log("Shutting down...");
+    console.log("Shutting down server...");
     jetstream.disconnect();
     db.close();
     Deno.exit(0);
@@ -172,6 +184,11 @@ function createDb(cfg: BffConfig) {
       "points" INTEGER NOT NULL,
       "resetAt" TEXT NOT NULL,
       PRIMARY KEY ("key", "namespace")
+    );
+
+    CREATE TABLE IF NOT EXISTS locks (
+      "key" TEXT PRIMARY KEY,
+      "createdAt" DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
@@ -670,39 +687,43 @@ function createSubscription(
 ) {
   const jetstream = new Jetstream({
     instanceUrl: cfg.jetstreamUrl,
-    wantedCollections: cfg.collections ?? [],
+    wantedCollections: [
+      ...(cfg.collections || []),
+      ...(cfg.externalCollections || []),
+    ],
     handleEvent: async (event) => {
+      if (event.kind !== "commit" || !event.commit) return;
+
       const { currentIsPrimary } = await getInstanceInfo(cfg);
       if (!currentIsPrimary) return;
 
-      if (event.kind !== "commit") return;
-      if (!event.commit) return;
+      const { did, commit } = event;
+      const { collection, operation, rkey, cid, record } = commit;
+      const uri = `at://${did}/${collection}/${rkey}`;
 
-      console.log("Received event:", event);
+      // For external collections, verify the actor exists in the database
+      if (cfg.externalCollections?.includes(collection)) {
+        const actor = indexService.getActor(did);
+        if (!actor) return;
+      }
 
-      const uri =
-        `at://${event.did}/${event.commit.collection}/${event.commit.rkey}`;
+      console.log(`Received ${operation} event for ${uri}`);
 
-      if (
-        (
-          event.commit.operation === "create" ||
-          event.commit.operation === "update"
-        )
-      ) {
+      if (operation === "create" || operation === "update") {
         cfg.lexicons.assertValidRecord(
-          event.commit.collection,
-          hydrateBlobRefs(event.commit.record),
+          collection,
+          hydrateBlobRefs(record),
         );
 
         indexService.insertRecord({
-          uri: uri,
-          cid: event.commit.cid,
-          did: event.did,
-          collection: event.commit.collection,
-          json: stringifyLex(event.commit.record),
+          uri,
+          cid,
+          did,
+          collection,
+          json: stringifyLex(record),
           indexedAt: new Date().toISOString(),
         });
-      } else if (event.commit?.operation === "delete") {
+      } else if (operation === "delete") {
         indexService.deleteRecord(uri);
       }
     },
@@ -719,6 +740,8 @@ async function createOauthClient(db: Database, cfg: BffConfig) {
 
   const hasPrivateKeys =
     !!(cfg.privateKey1 && cfg.privateKey2 && cfg.privateKey3);
+
+  const requestLock = createLock(db);
 
   return new AtprotoOAuthClient({
     responseMode: "query",
@@ -745,12 +768,16 @@ async function createOauthClient(db: Database, cfg: BffConfig) {
     stateStore: createStateStore(db),
     sessionStore: createSessionStore(db),
     ...hasPrivateKeys && {
-      keyset: await Promise.all([
+      // @TODO: fix this type assertion
+      keyset: (await Promise.all([
         JoseKey.fromImportable(cfg.privateKey1 ?? "{}"),
         JoseKey.fromImportable(cfg.privateKey2 ?? "{}"),
         JoseKey.fromImportable(cfg.privateKey3 ?? "{}"),
-      ]),
+      ])) as unknown as ConstructorParameters<
+        typeof AtprotoOAuthClient
+      >[0]["keyset"],
     },
+    requestLock,
   });
 }
 
@@ -773,6 +800,48 @@ function createStateStore(db: Database): NodeSavedStateStore {
     del(key: string) {
       db.prepare(`DELETE FROM auth_state WHERE key = ?`).run(key);
     },
+  };
+}
+
+interface SqliteError extends Error {
+  code?: string;
+}
+
+function createLock(db: Database) {
+  return async <T,>(key: string, fn: () => T | PromiseLike<T>): Promise<T> => {
+    const acquireLock = () => {
+      try {
+        db.prepare("INSERT INTO locks (key) VALUES (?)").run(key);
+        return true;
+      } catch (err) {
+        const sqliteErr = err as SqliteError;
+        if (sqliteErr.code === "SQLITE_CONSTRAINT_PRIMARYKEY") {
+          return false; // lock already held
+        }
+        throw err;
+      }
+    };
+
+    const releaseLock = () => {
+      db.prepare("DELETE FROM locks WHERE key = ?").run(key);
+    };
+
+    const waitForLock = async () => {
+      const start = Date.now();
+      const timeout = 30000; // 30s
+      while (Date.now() - start < timeout) {
+        if (acquireLock()) return;
+        await new Promise((resolve) => setTimeout(resolve, 100)); // retry every 100ms
+      }
+      throw new Error("Timeout acquiring SQLite lock");
+    };
+
+    await waitForLock();
+    try {
+      return await fn();
+    } finally {
+      releaseLock();
+    }
   };
 }
 
@@ -1439,15 +1508,98 @@ export function backfillUris(
 
 export function backfillCollections(
   indexService: IndexService,
-): (repos: string[], collections: string[]) => Promise<void> {
+): (
+  params: {
+    collections?: string[];
+    externalCollections?: string[];
+    repos?: string[];
+  },
+) => Promise<void> {
   return async (
-    repos: string[],
-    collections: string[],
+    { collections, externalCollections, repos }: {
+      collections?: string[];
+      externalCollections?: string[];
+      repos?: string[];
+    },
   ) => {
-    const atpMap = await getAtpMapForRepos(repos);
-    const records = await getRecordsForRepos(repos, collections, atpMap);
-    indexActors(repos, atpMap, indexService);
+    console.log();
+    console.log("🔄 Starting backfill operation");
+
+    if (!collections || collections.length === 0) {
+      console.log("⚠️ No collections specified for backfill");
+    } else {
+      console.log(
+        `📚 Processing ${collections.length} collections: ${
+          collections.join(", ")
+        }`,
+      );
+    }
+
+    if (externalCollections && externalCollections.length > 0) {
+      console.log(
+        `🌐 Including ${externalCollections.length} external collections: ${
+          externalCollections.join(", ")
+        }`,
+      );
+    }
+    const agent = new Agent("https://relay1.us-west.bsky.network");
+
+    let allRepos: string[] = [];
+    if (repos && repos.length > 0) {
+      console.log(`📋 Using ${repos.length} provided repositories`);
+      allRepos = repos;
+    } else {
+      // Fetch repos for all collections concurrently
+      console.log("📊 Fetching repositories for collections...");
+      const collectionResults = await Promise.all(
+        (collections || []).map(async (collection) => {
+          const response = await agent.com.atproto.sync.listReposByCollection({
+            collection,
+          });
+          console.log(
+            `✓ Found ${response.data.repos.length} repositories for collection "${collection}"`,
+          );
+          return {
+            collection,
+            repos: response.data.repos.map((repo) => repo.did),
+          };
+        }),
+      );
+
+      // Aggregate unique repos across all collections
+      allRepos = [
+        ...new Set(collectionResults.flatMap((result) => result.repos)),
+      ];
+      console.log(`📋 Processing ${allRepos.length} unique repositories`);
+    }
+
+    // Get ATP data for all repos at once
+    console.log("🔍 Resolving ATP data for repositories...");
+    const atpMap = await getAtpMapForRepos(allRepos);
+    console.log(
+      `✓ Resolved ATP data for ${atpMap.size}/${allRepos.length} repositories`,
+    );
+
+    // Get all records for all repos and collections at once
+    console.log("📥 Fetching records for repositories and collections...");
+    let totalRecords = 0;
+
+    const records = await getRecordsForRepos(
+      allRepos,
+      (collections || []).concat(externalCollections || []),
+      atpMap,
+    );
+    totalRecords = records.length;
+    console.log(`✓ Fetched ${totalRecords} total records`);
+
+    // Index the actors and records
+    console.log("📝 Indexing actors...");
+    indexActors(allRepos, atpMap, indexService);
+    console.log(`✓ Indexed ${allRepos.length} actors`);
+
+    console.log(`📝 Indexing ${totalRecords} records...`);
     indexRecords(records, indexService);
+    console.log("✅ Backfill complete!");
   };
 }
 

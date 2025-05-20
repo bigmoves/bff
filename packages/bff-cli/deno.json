@@ -1,6 +1,6 @@
 {
   "name": "@bigmoves/bff-cli",
-  "version": "0.3.0-beta.21",
+  "version": "0.3.0-beta.22",
   "license": "MIT",
   "imports": {
     "@std/cli": "jsr:@std/cli@^1.0.16",
@@ -11,5 +11,9 @@
     ".": "./mod.ts",
     "./unslopify.ts": "./unslopify.ts",
     "./replace_imports.ts": "./replace_imports.ts"
+  },
+  "compilerOptions": {
+    "jsx": "precompile",
+    "jsxImportSource": "preact"
   }
 }

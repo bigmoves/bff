@@ -45,7 +45,8 @@ export function hydrateBlobRefs<T>(obj: T): T {
   const result = {} as T;
   for (const key in obj) {
     if (Object.hasOwn(obj, key)) {
-      result[key] = hydrateBlobRefs(obj[key]);
+      const value = obj[key];
+      result[key] = hydrateBlobRefs(value);
     }
   }
 

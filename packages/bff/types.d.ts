@@ -53,8 +53,10 @@ export type BffOptions = {
   databaseUrl?: string;
   /** The URL of the Jetstream server */
   jetstreamUrl?: string;
-  /** Collections to index from the firehose */
+  /** Collections to index off the firehose from internal lexicons */
   collections?: string[];
+  /** Collections to index off the firehose from external lexicons */
+  externalCollections?: string[];
   /** OAuth Scopes */
   /** @default "atproto transition:generic" */
   oauthScope?: string;
@@ -169,10 +171,11 @@ export type BffContext<State = Record<string, unknown>> = {
     }>,
   ) => Promise<string[]>;
   deleteRecord: (uri: string) => Promise<void>;
-  backfillCollections: (
-    repos: string[],
-    collections: string[],
-  ) => Promise<void>;
+  backfillCollections: (params: {
+    collections?: string[];
+    externalCollections?: string[];
+    repos?: string[];
+  }) => Promise<void>;
   backfillUris: (
     uris: string[],
   ) => Promise<void>;

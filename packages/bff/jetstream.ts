@@ -1,3 +1,5 @@
+import * as colors from "@std/fmt/colors";
+
 export enum JETSTREAM {
   EAST_1 = "wss://jetstream1.us-east.bsky.network",
   EAST_2 = "wss://jetstream2.us-east.bsky.network",
@@ -60,7 +62,11 @@ export class Jetstream<T> {
       this.#ws.onopen = () => {
         this.#isConnected = true;
         this.#reconnectAttempt = 0;
-        console.log("Connected to Jetstream at %s", this.#instanceUrl);
+        const localLabel = colors.bold("Jetstream:");
+        const instanceUrl = colors.cyan(
+          `${this.#instanceUrl}`,
+        );
+        console.log(`    ${localLabel}  ${instanceUrl}`);
         resolve();
       };
 

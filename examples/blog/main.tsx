@@ -25,7 +25,11 @@ bff({
   onListen: async ({ indexService }: onListenArgs) => {
     await backfillCollections(
       indexService,
-    )([REPO], ["com.whtwnd.blog.entry"]);
+    )({
+      repos: [REPO],
+      collections: [],
+      externalCollections: ["com.whtwnd.blog.entry"],
+    });
   },
   middlewares: [
     route("/", (_req, _params, ctx) => {
