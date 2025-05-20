@@ -741,7 +741,7 @@ async function createOauthClient(db: Database, cfg: BffConfig) {
   const hasPrivateKeys =
     !!(cfg.privateKey1 && cfg.privateKey2 && cfg.privateKey3);
 
-  const requestLock = createLock(db);
+  const requestLock = createLock(db, cfg);
 
   return new AtprotoOAuthClient({
     responseMode: "query",
@@ -807,8 +807,13 @@ interface SqliteError extends Error {
   code?: string;
 }
 
-function createLock(db: Database) {
+function createLock(db: Database, cfg: BffConfig) {
   return async <T,>(key: string, fn: () => T | PromiseLike<T>): Promise<T> => {
+    const { currentIsPrimary } = await getInstanceInfo(cfg);
+    if (!currentIsPrimary) {
+      return Promise.resolve(fn());
+    }
+
     const acquireLock = () => {
       try {
         db.prepare("INSERT INTO locks (key) VALUES (?)").run(key);
