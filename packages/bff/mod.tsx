@@ -741,7 +741,7 @@ async function createOauthClient(db: Database, cfg: BffConfig) {
   const hasPrivateKeys =
     !!(cfg.privateKey1 && cfg.privateKey2 && cfg.privateKey3);
 
-  const requestLock = createLock(db, cfg);
+  // const requestLock = createLock(db, cfg);
 
   return new AtprotoOAuthClient({
     responseMode: "query",
@@ -777,7 +777,6 @@ async function createOauthClient(db: Database, cfg: BffConfig) {
         typeof AtprotoOAuthClient
       >[0]["keyset"],
     },
-    requestLock,
   });
 }
 
