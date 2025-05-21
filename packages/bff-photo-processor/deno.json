@@ -1,6 +1,6 @@
 {
   "name": "@bigmoves/bff-photo-processor",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "license": "MIT",
   "imports": {
     "sharp": "npm:sharp@^0.34.1",
