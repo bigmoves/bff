@@ -14,6 +14,7 @@ type UploadMeta = {
     width?: number;
     height?: number;
   };
+  photoUri?: string;
 };
 
 /**
@@ -26,14 +27,26 @@ type UploadMeta = {
  * const status = photoProcessor.getUploadStatus(uploadId);
  */
 export class BFFPhotoProcessor {
+  private queueDatabaseUrl = "file::memory:?cache=shared";
   private agent?: Agent;
   private queue?: Queue;
   private initialized = false;
   private readonly uploadMetaCache = new TtlCache<string, UploadMeta>(
     1000 * 60 * 5,
   ); // 5 min
+  private readonly onJobComplete: (
+    agent: Agent,
+    blobRef: BlobRef,
+  ) => Promise<string>;
 
-  constructor() {
+  constructor(
+    { queueDatabaseUrl, onJobComplete }: {
+      queueDatabaseUrl: string;
+      onJobComplete: (agent: Agent, blobRef: BlobRef) => Promise<string>;
+    },
+  ) {
+    this.onJobComplete = onJobComplete;
+    this.queueDatabaseUrl = queueDatabaseUrl;
     Deno.addSignalListener("SIGINT", () => {
       console.log("Shutting down photo processor...");
       this.queue?.close();
@@ -44,7 +57,7 @@ export class BFFPhotoProcessor {
     if (this.initialized) return;
     this.agent = agent;
     this.queue = await Queue.create(
-      "file::memory:?cache=shared",
+      this.queueDatabaseUrl,
       this.onComplete.bind(this),
       this.onError.bind(this),
     );
@@ -140,12 +153,18 @@ export class BFFPhotoProcessor {
 
       await Deno.remove(result.imagePath);
 
+      const photoUri = await this.onJobComplete(
+        this.agent,
+        blobResponse.data.blob,
+      );
+
       const existingUploadMeta = this.uploadMetaCache.get(result.uploadId);
       const newUploadMeta: UploadMeta = {
         ...existingUploadMeta,
         status: "completed",
         blobRef: blobResponse.data.blob,
         dimensions: result.dimensions,
+        photoUri,
       };
 
       this.uploadMetaCache.set(result.uploadId, newUploadMeta);
