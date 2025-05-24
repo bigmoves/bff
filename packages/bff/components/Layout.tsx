@@ -16,6 +16,7 @@ type LayoutNavProps = JSX.HTMLAttributes<HTMLDivElement> & {
     handle: string;
     avatar?: string;
   };
+  showSearch?: boolean;
   showNotifications?: boolean;
   hasNotifications?: boolean;
 };
@@ -55,6 +56,7 @@ const LayoutNav: FunctionalComponent<LayoutNavProps> = (
     heading,
     profile,
     showNotifications,
+    showSearch,
     hasNotifications,
     class: classProp,
     ...props
@@ -76,10 +78,23 @@ const LayoutNav: FunctionalComponent<LayoutNavProps> = (
       <div class="tw:space-x-2">
         {profile
           ? (
-            <div class="tw:flex tw:items-center tw:space-x-2">
+            <div class="tw:flex tw:items-center ts:space-x-1 sm:tw:space-x-2">
               <form hx-post="/logout" hx-swap="none" class="inline">
                 <Button type="submit" variant="secondary">Sign out</Button>
               </form>
+              {showSearch
+                ? (
+                  <Button
+                    asChild
+                    variant="secondary"
+                    class="tw:relative tw:pl-2"
+                  >
+                    <a href="/explore">
+                      <i class="fas fa-search tw:text-zinc-950 tw:dark:text-zinc-50" />
+                    </a>
+                  </Button>
+                )
+                : null}
               {showNotifications
                 ? (
                   <Button

@@ -121,9 +121,24 @@ export type WhereOption = {
   in?: string[];
 };
 
+interface WhereCondition {
+  field: string;
+  equals?: string | number | boolean;
+  contains?: string;
+  in?: Array<string | number | boolean>;
+}
+
+type NestedWhere = {
+  AND?: Where[];
+  OR?: Where[];
+  NOT?: Where;
+};
+
+export type Where = WhereCondition | NestedWhere;
+
 export type QueryOptions = {
   orderBy?: OrderByOption[];
-  where?: WhereOption[];
+  where?: Where | Where[];
   limit?: number;
   cursor?: string;
 };
@@ -143,6 +158,10 @@ export type IndexService = {
   insertActor: (actor: ActorTable) => void;
   getActor: (did: string) => ActorTable | undefined;
   getActorByHandle: (handle: string) => ActorTable | undefined;
+  searchActors: (
+    query: string,
+    opts?: { limit?: number },
+  ) => ActorTable[];
   getMentioningUris: (
     did: string,
   ) => string[];

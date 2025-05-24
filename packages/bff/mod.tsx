@@ -39,6 +39,8 @@ import type {
   RecordTable,
   RootProps,
   RouteHandler,
+  Where,
+  WhereCondition,
 } from "./types.d.ts";
 import { hydrateBlobRefs } from "./utils.ts";
 
@@ -205,6 +207,62 @@ function createDb(cfg: BffConfig) {
   return db;
 }
 
+function buildWhereClause(
+  condition: Where,
+  tableColumns: string[],
+  params: Array<string | number | boolean>,
+): string {
+  if (Array.isArray(condition)) {
+    return condition.map((c) => buildWhereClause(c, tableColumns, params)).join(
+      " AND ",
+    );
+  }
+
+  if ("AND" in condition) {
+    const parts = condition.AND!.map((c) =>
+      `(${buildWhereClause(c, tableColumns, params)})`
+    );
+    return parts.join(" AND ");
+  }
+
+  if ("OR" in condition) {
+    const parts = condition.OR!.map((c) =>
+      `(${buildWhereClause(c, tableColumns, params)})`
+    );
+    return parts.join(" OR ");
+  }
+
+  if ("NOT" in condition) {
+    return `NOT (${buildWhereClause(condition.NOT!, tableColumns, params)})`;
+  }
+
+  const { field, equals, contains, in: inArray } = condition as WhereCondition;
+
+  if (!field) throw new Error("Missing 'field' in condition");
+
+  const isDirect = tableColumns.includes(field);
+  const columnExpr = isDirect ? field : `JSON_EXTRACT(json, '$.${field}')`;
+
+  if (equals !== undefined) {
+    params.push(equals);
+    return `${columnExpr} = ?`;
+  }
+
+  if (contains !== undefined) {
+    params.push(`%${contains.toLowerCase()}%`);
+    return `LOWER(${columnExpr}) LIKE ?`;
+  }
+
+  if (Array.isArray(inArray)) {
+    if (inArray.length === 0) return `0 = 1`;
+    const placeholders = inArray.map(() => "?").join(", ");
+    params.push(...inArray);
+    return `${columnExpr} IN (${placeholders})`;
+  }
+
+  throw new Error("Unsupported condition format");
+}
+
 const indexService = (db: Database): IndexService => {
   return {
     getRecords: <T extends Record<string, unknown>>(
@@ -215,49 +273,21 @@ const indexService = (db: Database): IndexService => {
       const params: string[] = [collection];
       const tableColumns = ["did", "uri", "indexedAt", "cid"];
 
-      if (options?.where && options.where.length > 0) {
-        options.where.forEach((condition) => {
-          const field = condition.field;
-          if (tableColumns.includes(field)) {
-            if (condition.equals !== undefined) {
-              query += ` AND ${field} = ?`;
-              params.push(condition.equals);
-            } else if (condition.contains !== undefined) {
-              query += ` AND LOWER(${field}) LIKE LOWER(?)`;
-              params.push(`%${condition.contains}%`);
-            } else if (
-              condition.in !== undefined && Array.isArray(condition.in)
-            ) {
-              if (condition.in.length === 0) {
-                query += ` AND 0 = 1`; // Empty array means no matches
-              } else {
-                const placeholders = condition.in.map(() => "?").join(", ");
-                query += ` AND ${field} IN (${placeholders})`;
-                params.push(...condition.in);
-              }
-            }
-          } else {
-            if (condition.equals !== undefined) {
-              query += ` AND JSON_EXTRACT(json, '$.${field}') = ?`;
-              params.push(condition.equals);
-            } else if (condition.contains !== undefined) {
-              query +=
-                ` AND INSTR(LOWER(JSON_EXTRACT(json, '$.${field}')), LOWER(?)) > 0`;
-              params.push(condition.contains);
-            } else if (
-              condition.in !== undefined && Array.isArray(condition.in)
-            ) {
-              if (condition.in.length === 0) {
-                query += ` AND 0 = 1`; // Empty array means no matches
-              } else {
-                const placeholders = condition.in.map(() => "?").join(", ");
-                query +=
-                  ` AND JSON_EXTRACT(json, '$.${field}') IN (${placeholders})`;
-                params.push(...condition.in);
-              }
-            }
-          }
-        });
+      const normalizedWhere = Array.isArray(options?.where)
+        ? { AND: options.where }
+        : options?.where;
+
+      if (normalizedWhere) {
+        try {
+          const whereClause = buildWhereClause(
+            normalizedWhere,
+            tableColumns,
+            params,
+          );
+          if (whereClause) query += ` AND (${whereClause})`;
+        } catch (err) {
+          console.warn("Invalid where clause", err);
+        }
       }
 
       if (options?.cursor) {
@@ -522,6 +552,15 @@ const indexService = (db: Database): IndexService => {
         handle,
       );
       return result as ActorTable | undefined;
+    },
+    searchActors: (
+      query: string,
+    ): ActorTable[] => {
+      const sql = `SELECT * FROM "actor" WHERE handle LIKE ?`;
+      const params: string[] = [`%${query}%`];
+
+      const rows = db.prepare(sql).all(...params) as ActorTable[];
+      return rows;
     },
     getMentioningUris: (did: string): string[] => {
       const pattern = `%at://${did}%`;
