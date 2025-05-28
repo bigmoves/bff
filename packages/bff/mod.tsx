@@ -3,7 +3,7 @@ import { TID } from "@atproto/common";
 import { type AtprotoData, DidResolver, MemoryCache } from "@atproto/identity";
 import { type BlobRef, Lexicons, stringifyLex } from "@atproto/lexicon";
 import { OAuthResolverError } from "@atproto/oauth-client";
-import { AtUri, isValidHandle } from "@atproto/syntax";
+import { AtUri } from "@atproto/syntax";
 import {
   AtprotoOAuthClient,
   type NodeSavedSession,
@@ -142,6 +142,9 @@ function configureBff(cfg: BffOptions): BffConfig {
     privateKey1: Deno.env.get("BFF_PRIVATE_KEY_1"),
     privateKey2: Deno.env.get("BFF_PRIVATE_KEY_2"),
     privateKey3: Deno.env.get("BFF_PRIVATE_KEY_3"),
+    plcDirectoryUrl: Deno.env.get("BFF_PLC_DIRECTORY_URL") ??
+      "https://plc.directory",
+    jetstreamUrl: cfg.jetstreamUrl ?? Deno.env.get("BFF_JETSTREAM_URL"),
     lexicons: cfg.lexicons ?? new Lexicons(),
     oauthScope: cfg.oauthScope ?? "atproto transition:generic",
     middlewares: cfg.middlewares ?? [],
@@ -605,6 +608,7 @@ function composeMiddlewares(
   ) => {
     const didCache = new MemoryCache();
     const didResolver = new DidResolver({
+      plcUrl: cfg.plcDirectoryUrl,
       didCache,
     });
     const idxService = indexService(db);
@@ -637,8 +641,8 @@ function composeMiddlewares(
     const updateRecordFn = updateRecord(agent, idxService, cfg);
     const updateRecordsFn = updateRecords(agent, idxService, cfg);
     const deleteRecordFn = deleteRecord(agent, idxService);
-    const backfillCollectionsFn = backfillCollections(idxService);
-    const backfillUrisFn = backfillUris(idxService);
+    const backfillCollectionsFn = backfillCollections(idxService, cfg);
+    const backfillUrisFn = backfillUris(idxService, cfg);
     const uploadBlobFn = uploadBlob(agent);
     const rateLimitFn = rateLimit(req, currentUser, db);
     const getNotificationsFn = getNotifications(currentUser, idxService);
@@ -783,6 +787,7 @@ async function createOauthClient(db: Database, cfg: BffConfig) {
   // const requestLock = createLock(db, cfg);
 
   return new AtprotoOAuthClient({
+    plcDirectoryUrl: cfg.plcDirectoryUrl,
     responseMode: "query",
     clientMetadata: {
       client_name: cfg.appName,
@@ -1172,9 +1177,9 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       const formData = await req.formData();
       const handle = formData.get("handle") as string;
 
-      if (typeof handle !== "string" || !isValidHandle(handle)) {
-        return ctx.html(<LoginComponent error="invalid handle" />);
-      }
+      // if (typeof handle !== "string" || !isValidHandle(handle)) {
+      //   return ctx.html(<LoginComponent error="invalid handle" />);
+      // }
 
       try {
         const url = await ctx.oauthClient.authorize(handle, {
@@ -1267,8 +1272,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
     if (pathname === OAUTH_ROUTES.signup) {
       try {
         const url = await ctx.oauthClient.authorize(
-          // TODO: add to config
-          "https://bsky.social",
+          opts?.createAccountPdsHost || "https://bsky.social",
           {
             signal: req.signal,
           },
@@ -1427,8 +1431,11 @@ const atpCache = new MemoryCache();
 
 async function getAtpMapForRepos(
   repos: string[],
+  cfg: BffConfig,
 ): Promise<Map<string, AtprotoData>> {
+  console.log("PLC URL:", cfg.plcDirectoryUrl);
   const didResolver = new DidResolver({
+    plcUrl: cfg.plcDirectoryUrl,
     didCache: atpCache,
   });
   const atpMap = new Map<string, AtprotoData>();
@@ -1539,10 +1546,11 @@ function indexActors(
 
 export function backfillUris(
   indexService: IndexService,
+  cfg: BffConfig,
 ): (uris: string[]) => Promise<void> {
   return async (uris: string[]) => {
     const repos = uris.map((uri) => new AtUri(uri).hostname);
-    const atpMap = await getAtpMapForRepos(repos);
+    const atpMap = await getAtpMapForRepos(repos, cfg);
     const records = await getRecordsForUris(uris, atpMap, indexService);
     indexActors(repos, atpMap, indexService);
     indexRecords(records, indexService);
@@ -1551,6 +1559,7 @@ export function backfillUris(
 
 export function backfillCollections(
   indexService: IndexService,
+  cfg: BffConfig,
 ): (
   params: {
     collections?: string[];
@@ -1618,7 +1627,7 @@ export function backfillCollections(
 
     // Get ATP data for all repos at once
     console.log("🔍 Resolving ATP data for repositories...");
-    const atpMap = await getAtpMapForRepos(allRepos);
+    const atpMap = await getAtpMapForRepos(allRepos, cfg);
     console.log(
       `✓ Resolved ATP data for ${atpMap.size}/${allRepos.length} repositories`,
     );

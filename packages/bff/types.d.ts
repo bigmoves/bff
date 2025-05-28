@@ -95,6 +95,10 @@ export type EnvConfig = {
   privateKey2?: string;
   /** jwks private key 3 */
   privateKey3?: string;
+  /** The PLC directory url */
+  plcDirectoryUrl?: string;
+  /** The URL of the Jetstream server */
+  jetstreamUrl?: string;
 };
 
 export type BffConfig = BffOptions & EnvConfig & {
@@ -231,6 +235,8 @@ export type OauthMiddlewareOptions = {
    * @returns {string | undefined} The URL to redirect to after login
    */
   onSignedIn?: (params: onSignedInArgs) => Promise<string | undefined> | void;
+
+  createAccountPdsHost?: string;
 };
 
 export type RootProps<T = Record<string, unknown>> = {
