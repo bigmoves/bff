@@ -1157,7 +1157,7 @@ export const OAUTH_ROUTES = {
   callback: "/oauth/callback",
   signup: "/signup",
   logout: "/logout",
-  clientMetadata: "/oauth/client-metadata.json",
+  clientMetadata: "/oauth-client-metadata.json",
   jwks: "/oauth/jwks.json",
 };
 
