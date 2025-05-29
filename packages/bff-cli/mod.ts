@@ -121,9 +121,10 @@ if (import.meta.main) {
       bff({
         appName: "CLI Sync",
         databaseUrl: flags.db,
-        onListen: async ({ indexService }) => {
+        onListen: async ({ indexService, cfg }) => {
           await backfillCollections(
             indexService,
+            cfg,
           )({
             collections: flags.collections ? flags.collections.split(",") : [],
             externalCollections: flags["external-collections"]

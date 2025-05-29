@@ -41,7 +41,7 @@ type RootElement = <T extends Record<string, unknown>>(
   props: RootProps<T>,
 ) => preact.VNode;
 
-export type onListenArgs = { indexService: IndexService };
+export type onListenArgs = { indexService: IndexService; cfg: BffConfig };
 
 export type BffOptions = {
   /** The name of the app, used for OAuth */

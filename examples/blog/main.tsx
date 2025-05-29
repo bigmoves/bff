@@ -22,9 +22,10 @@ bff({
   jetstreamUrl: JETSTREAM.WEST_1,
   lexicons,
   rootElement: Root,
-  onListen: async ({ indexService }: onListenArgs) => {
+  onListen: async ({ indexService, cfg }: onListenArgs) => {
     await backfillCollections(
       indexService,
+      cfg,
     )({
       repos: [REPO],
       collections: [],

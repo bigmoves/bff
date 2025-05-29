@@ -76,6 +76,7 @@ export async function bff(opts: BffOptions) {
   // TODO: maybe should be onBeforeListen
   await bffConfig.onListen?.({
     indexService: idxService,
+    cfg: bffConfig,
   });
 
   Deno.serve({
