@@ -208,7 +208,10 @@ export type BffContext<State = Record<string, unknown>> = {
   currentUser?: ActorTable;
   cfg: BffConfig;
   next: () => Promise<Response>;
-  render: (children: ComponentChildren) => Response;
+  render: (
+    children: ComponentChildren,
+    headers?: Record<string, string>,
+  ) => Response;
   html: (vnode: VNode, headers?: Record<string, string>) => Response;
   redirect: (url: string) => Response;
   rateLimit: (options: {

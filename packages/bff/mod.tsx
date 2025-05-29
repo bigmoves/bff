@@ -1095,7 +1095,7 @@ function deleteRecord(
 }
 
 function render(ctx: BffContext, cfg: BffConfig) {
-  return (children: ComponentChildren) => {
+  return (children: ComponentChildren, headers?: Record<string, string>) => {
     const RootElement = cfg.rootElement;
     const str = renderToString(<RootElement ctx={ctx}>{children}</RootElement>);
     return new Response(
@@ -1103,6 +1103,7 @@ function render(ctx: BffContext, cfg: BffConfig) {
       {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
+          ...headers,
         },
       },
     );
@@ -1434,7 +1435,6 @@ async function getAtpMapForRepos(
   repos: string[],
   cfg: BffConfig,
 ): Promise<Map<string, AtprotoData>> {
-  console.log("PLC URL:", cfg.plcDirectoryUrl);
   const didResolver = new DidResolver({
     plcUrl: cfg.plcDirectoryUrl,
     didCache: atpCache,
