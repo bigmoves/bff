@@ -1177,9 +1177,9 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       const formData = await req.formData();
       const handle = formData.get("handle") as string;
 
-      // if (typeof handle !== "string" || !isValidHandle(handle)) {
-      //   return ctx.html(<LoginComponent error="invalid handle" />);
-      // }
+      if (typeof handle !== "string") {
+        return ctx.html(<LoginComponent error="invalid handle" />);
+      }
 
       try {
         const url = await ctx.oauthClient.authorize(handle, {
