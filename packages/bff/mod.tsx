@@ -53,6 +53,7 @@ export type {
   BffOptions,
   onListenArgs,
   onSignedInArgs,
+  QueryOptions,
   RecordTable,
   RootProps,
   RouteHandler,
