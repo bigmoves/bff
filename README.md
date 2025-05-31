@@ -38,6 +38,17 @@ cd my-app
 deno task dev
 ```
 
+NOTE: If you want the latest changes currently on main use
+`jsr:@bigmoves/bff@0.3.0-beta.29` or check `packages/bff/deno.json` for the
+latest version. Trying to move fast with some changes on a different project but
+will hopefully land a new minor soon.
+
+You can specify the latest beta in cli as well:
+
+```bash
+deno run -A jsr:@bigmoves/bff-cli@0.3.0-beta.29 init my-app
+```
+
 ## Working with Lexicons
 
 Lexicons define the schema of data in the AT Protocol. BFF allows you to work
