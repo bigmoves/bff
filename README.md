@@ -238,4 +238,3 @@ fly launch
 - **statusphere**: Bsky's statusphere app re-implemented for BFF
 - **search_likes**: Search your liked bsky posts
 - **blog**: Simple blog site for WhiteWind posts
-- **tangled_ascii**: Ascii file trees of Tangled.sh repos
