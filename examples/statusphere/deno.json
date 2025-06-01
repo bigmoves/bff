@@ -6,7 +6,7 @@
   },
   "tasks": {
     "dev": "deno run -A --watch main.tsx",
-    "codegen": "deno run -A ../../packages/bff-cli/mod.ts lex"
+    "codegen": "deno run -A ../../packages/bff-cli/mod.ts lexgen"
   },
   "compilerOptions": {
     "jsx": "react-jsx",

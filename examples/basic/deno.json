@@ -10,7 +10,7 @@
     "dev": "deno run \"dev:*\"",
     "dev:server": "deno run -A --unstable-kv --watch ./src/main.tsx",
     "dev:tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./input.css -o ./static/styles.css --watch",
-    "codegen": "deno run -A ../../packages/bff-cli/mod.ts lex"
+    "codegen": "deno run -A ../../packages/bff-cli/mod.ts lexgen"
   },
   "compilerOptions": {
     "jsx": "precompile",
