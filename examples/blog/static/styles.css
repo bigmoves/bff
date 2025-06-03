@@ -162,9 +162,6 @@
   }
 }
 @layer utilities {
-  .relative {
-    position: relative;
-  }
   .mx-auto {
     margin-inline: auto;
   }

@@ -1413,8 +1413,8 @@ async function getRecordsForRepos(
       } while (cursor);
 
       return repoRecords;
-    } catch (error) {
-      console.error(`Error fetching records for ${repo}/${collection}:`, error);
+    } catch (_error) {
+      console.error(`Error fetching records for ${repo}/${collection}`);
       return [];
     }
   }
@@ -1576,6 +1576,21 @@ export function backfillCollections(
       repos?: string[];
     },
   ) => {
+    const originalConsoleError = console.error;
+
+    // append error logging to a file
+    console.error = (...args: unknown[]) => {
+      const message = `[ERROR] ${new Date().toISOString()} ${
+        args.map(String).join(" ")
+      }\n`;
+
+      try {
+        Deno.writeTextFileSync("./sync.log", message, { append: true });
+      } catch (e) {
+        originalConsoleError("Failed to write to error log:", e);
+      }
+    };
+
     console.log();
     console.log("🔄 Starting backfill operation");
 
