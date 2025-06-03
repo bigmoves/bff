@@ -1273,9 +1273,16 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
     }
 
     if (pathname === OAUTH_ROUTES.signup) {
+      const formData = await req.formData();
+      let pdsHostUrl = formData.get("pdsHostUrl") as string;
+
+      if (typeof pdsHostUrl !== "string" || !pdsHostUrl) {
+        pdsHostUrl = opts?.createAccountPdsHost || "https://bsky.social";
+      }
+
       try {
         const url = await ctx.oauthClient.authorize(
-          opts?.createAccountPdsHost || "https://bsky.social",
+          pdsHostUrl,
           {
             signal: req.signal,
           },

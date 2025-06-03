@@ -6,12 +6,24 @@ import { cn } from "./utils.ts";
 export type LoginProps =
   & JSX.HTMLAttributes<HTMLFormElement>
   & Readonly<{
+    inputPlaceholder?: string;
+    submitText?: string;
+    infoText?: string;
     error?: string;
     errorClass?: string;
+    infoClass?: string;
   }>;
 
 export function Login(
-  { error, errorClass, ...rest }: LoginProps,
+  {
+    inputPlaceholder = "Handle (e.g., user.bsky.social)",
+    submitText = "Login with Bluesky",
+    infoText = "",
+    error,
+    errorClass,
+    infoClass,
+    ...rest
+  }: LoginProps,
 ): JSX.Element {
   return (
     <form
@@ -32,7 +44,7 @@ export function Login(
         <Input
           id="handle"
           class="input"
-          placeholder="Handle (e.g., user.bsky.social)"
+          placeholder={inputPlaceholder}
           name="handle"
         />
       </div>
@@ -42,8 +54,13 @@ export function Login(
         type="submit"
         class="tw:w-full"
       >
-        Login with Bluesky
+        {submitText}
       </Button>
+      {infoText && (
+        <div class={cn("tw:text-sm tw:text", infoClass)}>
+          {infoText}
+        </div>
+      )}
       <div className="tw:h-4">
         {error
           ? (
