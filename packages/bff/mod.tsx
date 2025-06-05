@@ -568,7 +568,7 @@ const indexService = (db: Database): IndexService => {
       return rows;
     },
     getMentioningUris: (did: string): string[] => {
-      const pattern = `%at://${did}%`;
+      const pattern = `%${did}%`;
       const result = db
         .prepare(`
           SELECT uri FROM record
