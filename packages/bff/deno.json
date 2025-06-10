@@ -1,6 +1,6 @@
 {
   "name": "@bigmoves/bff",
-  "version": "0.3.0-beta.32",
+  "version": "0.3.0-beta.33",
   "license": "MIT",
   "tasks": {
     "tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./styles/input.css -o ./styles/output.css -m",
@@ -9,9 +9,11 @@
       "dependencies": ["tailwind"]
     },
     "test": "deno test --allow-read",
-    "test:update-snapshots": "deno test --allow-read --allow-write -- --update"
+    "test:update-snapshots": "deno test --allow-read --allow-write -- --update",
+    "codegen": "deno run -A ../bff-cli/mod.ts lexgen"
   },
   "imports": {
+    "$lexicon/": "./__generated__/",
     "@atproto-labs/handle-resolver-node": "npm:@atproto-labs/handle-resolver-node@^0.1.14",
     "@atproto/api": "npm:@atproto/api@^0.15.7",
     "@atproto/common": "npm:@atproto/common@^0.4.10",
@@ -21,6 +23,7 @@
     "@atproto/syntax": "npm:@atproto/syntax@^0.4.0",
     "@bigmoves/atproto-oauth-client": "jsr:@bigmoves/atproto-oauth-client@^0.2.0",
     "@std/assert": "jsr:@std/assert@^1.0.13",
+    "@std/cache": "jsr:@std/cache@^0.2.0",
     "@std/fmt": "jsr:@std/fmt@^1.0.8",
     "@std/http": "jsr:@std/http@^1.0.13",
     "@std/path": "jsr:@std/path@^1.0.8",

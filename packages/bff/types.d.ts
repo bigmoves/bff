@@ -1,3 +1,8 @@
+import type {
+  Label,
+  LabelValue,
+  LabelValueDefinition,
+} from "$lexicon/types/com/atproto/label/defs.ts";
 import type { Agent } from "@atproto/api";
 import type { DidResolver } from "@atproto/identity";
 import type { BlobRef, Lexicons } from "@atproto/lexicon";
@@ -21,6 +26,17 @@ export type RecordTable = {
   collection: string;
   json: string;
   indexedAt: string;
+};
+
+export type LabelTable = {
+  id?: number;
+  src: string;
+  uri: string;
+  cid?: string | null;
+  val: string;
+  neg?: boolean;
+  cts: string;
+  exp?: string | null;
 };
 
 export type RecordMeta = {
@@ -64,6 +80,10 @@ export type BffOptions = {
   middlewares?: BffMiddleware[];
   /** The lexicons class imported from codegen. */
   lexicons?: Lexicons;
+  /** List of labelers that provide moderation labels. e.g. did:web:my-labeler.com */
+  appLabelers?: string[];
+  /** The collection declaring the labeler e.g. app.bsky.labeler.service */
+  appLabelerCollection?: string;
   /** The root element of the app */
   rootElement?: RootElement;
   /** Called when the server starts listening. */
@@ -111,6 +131,11 @@ export type BffConfig = BffOptions & EnvConfig & {
   queueDatabaseUrl: string;
   oauthScope: string;
   rootElement: RootElement;
+};
+
+export type LabelerPolicies = {
+  labelValues: LabelValue[];
+  labelValueDefinitions: LabelValueDefinition[];
 };
 
 export type OrderByOption = {
@@ -170,6 +195,14 @@ export type IndexService = {
     did: string,
   ) => string[];
   updateActor: (did: string, lastSeenNotifs: string) => void;
+  insertLabel: (label: LabelTable) => void;
+  queryLabels: (
+    options: {
+      subjects: string[];
+      issuers?: string[];
+    },
+  ) => Label[];
+  clearLabels: () => void;
 };
 
 export type BffContext<State = Record<string, unknown>> = {
@@ -224,6 +257,7 @@ export type BffContext<State = Record<string, unknown>> = {
   requireAuth: () => ActorTable; // Returns the currentUser if authenticated, throws otherwise
   getNotifications: <T extends Record<string, unknown>>() => T[];
   updateSeen: () => void;
+  getLabelerDefinitions: () => Promise<Record<string, LabelerPolicies>>;
 };
 
 export type onSignedInArgs = {

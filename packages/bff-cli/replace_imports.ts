@@ -18,9 +18,9 @@ async function processFile(file: string): Promise<void> {
   try {
     const text = await Deno.readTextFile(file);
 
-    // Replace imports with npm: prefix
+    // Replace imports with npm: prefix, including express
     const modifiedText = text.replace(
-      /from\s+['"](@atproto\/lexicon|@atproto\/xrpc-server|multiformats(?:\/[^'"]+)?)['"]/g,
+      /from\s+['"](@atproto\/lexicon|@atproto\/xrpc-server|multiformats(?:\/[^'"]+)?|express)['"]/g,
       'from "npm:$1"',
     );
 

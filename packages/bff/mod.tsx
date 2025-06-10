@@ -1,3 +1,4 @@
+import type { Label } from "$lexicon/types/com/atproto/label/defs.ts";
 import { Agent } from "@atproto/api";
 import { TID } from "@atproto/common";
 import { type AtprotoData, DidResolver, MemoryCache } from "@atproto/identity";
@@ -13,6 +14,7 @@ import {
 } from "@bigmoves/atproto-oauth-client";
 import { JoseKey } from "@bigmoves/atproto-oauth-client/jose_key.ts";
 import { assert } from "@std/assert";
+import { TtlCache } from "@std/cache";
 import * as colors from "@std/fmt/colors";
 import { deleteCookie, getCookies, setCookie } from "@std/http";
 import { serveDir } from "@std/http/file-server";
@@ -24,6 +26,7 @@ import { render as renderToString } from "preact-render-to-string";
 import { Login } from "./components/Login.tsx";
 import { RateLimitError, UnauthorizedError } from "./errors.ts";
 import { Jetstream } from "./jetstream.ts";
+import Labeler from "./labeler.ts";
 import { CSS } from "./styles.ts";
 import type {
   ActorTable,
@@ -34,6 +37,8 @@ import type {
   Database,
   HttpMethod,
   IndexService,
+  LabelerPolicies,
+  LabelTable,
   OauthMiddlewareOptions,
   QueryOptions,
   RecordTable,
@@ -51,6 +56,7 @@ export type {
   BffContext,
   BffMiddleware,
   BffOptions,
+  LabelerPolicies,
   onListenArgs,
   onSignedInArgs,
   QueryOptions,
@@ -64,14 +70,36 @@ export { CSS } from "./styles.ts";
 
 export async function bff(opts: BffOptions) {
   const bffConfig = configureBff(opts);
+
+  const didCache = new MemoryCache();
+  const didResolver = new DidResolver({
+    plcUrl: bffConfig.plcDirectoryUrl,
+    didCache,
+  });
+
   const db = createDb(bffConfig);
   const idxService = indexService(db);
   const oauthClient = await createOauthClient(db, bffConfig);
-  const handler = createBffHandler(db, oauthClient, bffConfig);
+  const handler = createBffHandler(db, oauthClient, bffConfig, didResolver);
   const jetstream = createSubscription(idxService, bffConfig);
+  const labelerMap = await createLabelerSubscriptions(
+    didResolver,
+    idxService,
+    bffConfig,
+  );
 
   if (bffConfig.jetstreamUrl && bffConfig.collections?.length) {
-    jetstream.connect();
+    jetstream.connect().catch((err) => {
+      console.error("Jetstream connection failed:", err);
+    });
+  }
+
+  if (labelerMap.size > 0) {
+    for (const labeler of labelerMap.values()) {
+      labeler.connect().catch((err) => {
+        console.error("Labeler connection failed:", err);
+      });
+    }
   }
 
   // TODO: maybe should be onBeforeListen
@@ -123,6 +151,9 @@ export async function bff(opts: BffOptions) {
   Deno.addSignalListener("SIGINT", () => {
     console.log("Shutting down server...");
     jetstream.disconnect();
+    for (const labeler of labelerMap.values()) {
+      labeler.disconnect();
+    }
     db.close();
     Deno.exit(0);
   });
@@ -196,6 +227,17 @@ function createDb(cfg: BffConfig) {
     CREATE TABLE IF NOT EXISTS locks (
       "key" TEXT PRIMARY KEY,
       "createdAt" DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS labels (
+      src TEXT NOT NULL,
+      uri TEXT NOT NULL,
+      cid TEXT,
+      val TEXT NOT NULL,
+      neg BOOLEAN DEFAULT FALSE,
+      cts DATETIME NOT NULL,
+      exp DATETIME,
+      PRIMARY KEY (src, uri, cid, val)
     );
   `);
 
@@ -583,6 +625,82 @@ const indexService = (db: Database): IndexService => {
         `UPDATE actor SET lastSeenNotifs = ? WHERE did = ?`,
       ).run(lastSeenNotifs, did);
     },
+    insertLabel: (label: LabelTable) => {
+      db.prepare(
+        `INSERT INTO labels (src, uri, cid, val, neg, cts, exp)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(src, uri, cid, val) DO UPDATE SET
+           neg = excluded.neg,
+           cts = excluded.cts,
+           exp = excluded.exp
+         WHERE excluded.cts > labels.cts`,
+      ).run(
+        label.src,
+        label.uri,
+        label.cid ?? "",
+        label.val,
+        label.neg ? 1 : 0,
+        label.cts,
+        label.exp ?? null,
+      );
+    },
+    queryLabels: (
+      options: {
+        subjects: string[];
+        issuers?: string[];
+      },
+    ) => {
+      const { subjects, issuers } = options;
+      if (!subjects || subjects.length === 0) {
+        return [];
+      }
+
+      const subjectConds = subjects.map(() => "l1.uri = ?").join(" OR ");
+      const issuerConds = issuers && issuers.length > 0
+        ? "AND (" + issuers.map(() => "l1.src = ?").join(" OR ") + ")"
+        : "";
+
+      const sql = `
+        SELECT *
+        FROM labels l1
+        WHERE (${subjectConds})
+          ${issuerConds}
+          AND (l1.exp IS NULL OR l1.exp > CURRENT_TIMESTAMP)
+          AND l1.cts = (
+        SELECT MAX(l2.cts)
+        FROM labels l2
+        WHERE l2.src = l1.src AND l2.uri = l1.uri AND l2.val = l1.val
+          )
+          AND l1.neg = 0
+      `.replace(/\s+/g, " ").trim();
+      const params = [...subjects, ...(issuers ?? [])];
+      const rawRows = db.prepare(sql).all(...params) as Record<
+        string,
+        unknown
+      >[];
+
+      // Map rawRows to Label[]
+      const labels: Label[] = rawRows.map((row) => ({
+        src: String(row.src),
+        uri: String(row.uri),
+        cid: typeof row.cid === "string"
+          ? row.cid
+          : row.cid === null
+          ? undefined
+          : String(row.cid),
+        val: String(row.val),
+        neg: Boolean(row.neg),
+        cts: String(row.cts),
+        exp: row.exp === null || row.exp === undefined
+          ? undefined
+          : String(row.exp),
+      }));
+
+      return labels;
+    },
+    clearLabels: () => {
+      db.prepare(`DELETE FROM labels`).run();
+    },
   };
 };
 
@@ -590,9 +708,10 @@ function createBffHandler(
   db: Database,
   oauthClient: AtprotoOAuthClient,
   cfg: BffConfig,
+  didResolver: DidResolver,
 ) {
   const inner = handler;
-  const withMiddlewares = composeMiddlewares(db, oauthClient, cfg);
+  const withMiddlewares = composeMiddlewares(db, oauthClient, cfg, didResolver);
   return function handler(req: Request, connInfo: Deno.ServeHandlerInfo) {
     return withMiddlewares(req, connInfo, inner);
   };
@@ -602,17 +721,13 @@ function composeMiddlewares(
   db: Database,
   oauthClient: AtprotoOAuthClient,
   cfg: BffConfig,
+  didResolver: DidResolver,
 ) {
   return async (
     req: Request,
     _connInfo: Deno.ServeHandlerInfo,
     inner: (req: Request, ctx: BffContext) => Promise<Response>,
   ) => {
-    const didCache = new MemoryCache();
-    const didResolver = new DidResolver({
-      plcUrl: cfg.plcDirectoryUrl,
-      didCache,
-    });
     const idxService = indexService(db);
 
     let agent: Agent | undefined;
@@ -649,6 +764,7 @@ function composeMiddlewares(
     const rateLimitFn = rateLimit(req, currentUser, db);
     const getNotificationsFn = getNotifications(currentUser, idxService);
     const updateSeenFn = updateSeen(currentUser, idxService);
+    const getLabelerDefinitionsFn = getLabelerDefinitions(didResolver, cfg);
 
     const ctx: BffContext = {
       state: {},
@@ -675,6 +791,7 @@ function composeMiddlewares(
       },
       getNotifications: getNotificationsFn,
       updateSeen: updateSeenFn,
+      getLabelerDefinitions: getLabelerDefinitionsFn,
     };
 
     ctx.render = render(ctx, cfg);
@@ -1911,4 +2028,100 @@ function updateSeen(
       new Date().toISOString(),
     );
   };
+}
+
+function getLabelerDefinitions(
+  didResolver: DidResolver,
+  cfg: BffConfig,
+) {
+  const cache = new TtlCache<string, Record<string, LabelerPolicies>>(
+    6 * 60 * 60 * 1000,
+  ); // 6 hours TTL
+
+  return async (): Promise<Record<string, LabelerPolicies>> => {
+    if (cfg.appLabelerCollection === undefined) {
+      throw new Error("App labeler collection is not defined");
+    }
+
+    if (!cfg.appLabelers) {
+      throw new Error("App labelers are not defined");
+    }
+
+    const cacheKey = "definitions";
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const definitionsByDid: Record<string, LabelerPolicies> = {};
+
+    for (const did of cfg.appLabelers) {
+      const atpData = await didResolver.resolveAtprotoData(did);
+
+      if (!atpData) {
+        console.error(`Failed to resolve Atproto data for DID: ${did}`);
+        continue;
+      }
+
+      const agent = new Agent(new URL(atpData.pds));
+
+      try {
+        const response = await agent.com.atproto.repo.getRecord({
+          collection: cfg.appLabelerCollection,
+          rkey: "self",
+          repo: did,
+        });
+        const policies = response.data?.value?.policies ??
+          { labelValues: [], labelValueDefinitions: [] };
+        definitionsByDid[did] = policies as LabelerPolicies;
+      } catch (error) {
+        console.error("Error fetching labeler definitions:", error);
+        // continue to next labeler
+      }
+    }
+
+    cache.set(cacheKey, definitionsByDid);
+    return definitionsByDid;
+  };
+}
+
+async function createLabelerSubscriptions(
+  didResolver: DidResolver,
+  indexService: IndexService,
+  cfg: BffConfig,
+) {
+  const labelerMap = new Map<string, Labeler>();
+  for (const did of cfg.appLabelers || []) {
+    const doc = await didResolver.resolve(did);
+    const modServiceEndpoint = doc?.service?.find((s) =>
+      s.type === "AtprotoLabeler"
+    )?.serviceEndpoint;
+
+    if (typeof modServiceEndpoint !== "string") {
+      console.warn(`No AtprotoLabeler service found for DID: ${did}`);
+      continue;
+    }
+
+    const wsUrl = modServiceEndpoint.replace(/^https:\/\//, "wss://");
+
+    let isFirstEvent = true;
+
+    const labeler = new Labeler({
+      instanceUrl: wsUrl,
+      handleEvent: (event) => {
+        // On the first event, clear the cache (assuming full backfill)
+        if (isFirstEvent) {
+          indexService.clearLabels();
+          isFirstEvent = false;
+        }
+        if (event.labels && event.labels.length > 0) {
+          for (const label of event.labels) {
+            indexService.insertLabel(label);
+          }
+        }
+      },
+    });
+    labelerMap.set(did, labeler);
+  }
+  return labelerMap;
 }
