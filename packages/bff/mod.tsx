@@ -88,7 +88,10 @@ export async function bff(opts: BffOptions) {
     bffConfig,
   );
 
-  if (bffConfig.jetstreamUrl && bffConfig.collections?.length) {
+  if (
+    bffConfig.jetstreamUrl &&
+    (bffConfig.collections?.length || bffConfig.externalCollections?.length)
+  ) {
     jetstream.connect().catch((err) => {
       console.error("Jetstream connection failed:", err);
     });

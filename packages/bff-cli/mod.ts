@@ -27,17 +27,19 @@ const DENO_JSON_NAME = "deno.json";
 const DENO_JSON_CONTENTS = `{
   "imports": {
     "$lexicon/": "./__generated__/",
+    "@bigmoves/bff": "jsr:@bigmoves/bff",
     "preact": "npm:preact@^10.26.5",
     "typed-htmx": "npm:typed-htmx@^0.3.1"
   },
   "tasks": {
     "dev": "deno run -A --watch main.tsx",
-    "codegen": "deno run -A ../../packages/bff-cli/mod.ts lex"
+    "codegen": "deno run -A jsr:@bigmoves/bff-cli lexgen"
   },
   "compilerOptions": {
-    "jsx": "react-jsx",
+    "jsx": "precompile",
     "jsxImportSource": "preact"
-  }
+  },
+  "nodeModulesDir": "auto"
 }
 `;
 
@@ -52,12 +54,22 @@ declare module "preact" {
 }
 `;
 
+const GITIGNORE_NAME = ".gitignore";
+const GITIGNORE_CONTENTS = `
+node_modules
+*.db*
+.DS_Store
+.env
+*.log
+`;
+
 if (import.meta.main) {
   const flags = parseArgs(Deno.args, {
     boolean: ["help"],
     string: [
       "db",
       "collections",
+      "repos",
       "external-collections",
       "unstable-lexicons",
     ],
@@ -126,6 +138,7 @@ if (import.meta.main) {
             indexService,
             cfg,
           )({
+            repos: flags.repos ? flags.repos.split(",") : [],
             collections: flags.collections ? flags.collections.split(",") : [],
             externalCollections: flags["external-collections"]
               ? flags["external-collections"].split(",")
@@ -168,14 +181,9 @@ async function init(directory: string) {
   await Deno.mkdir(join(directory, "lexicons"), { recursive: true });
   await Deno.mkdir(join(directory, "static"), { recursive: true });
   await Deno.writeTextFile(join(directory, MAIN_NAME), MAIN_CONTENTS);
-  await Deno.writeTextFile(
-    join(directory, DENO_JSON_NAME),
-    DENO_JSON_CONTENTS,
-  );
-  await Deno.writeTextFile(
-    join(directory, GLOBALS_NAME),
-    GLOBALS_CONTENTS,
-  );
+  await Deno.writeTextFile(join(directory, DENO_JSON_NAME), DENO_JSON_CONTENTS);
+  await Deno.writeTextFile(join(directory, GLOBALS_NAME), GLOBALS_CONTENTS);
+  await Deno.writeTextFile(join(directory, GITIGNORE_NAME), GITIGNORE_CONTENTS);
 
   console.log("Bff initialized, run `deno task dev` to get started.");
 }
