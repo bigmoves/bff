@@ -875,21 +875,36 @@ function createSubscription(
       console.log(`Received ${operation} event for ${uri}`);
 
       if (operation === "create" || operation === "update") {
-        cfg.lexicons.assertValidRecord(
-          collection,
-          hydrateBlobRefs(record),
-        );
+        try {
+          cfg.lexicons.assertValidRecord(
+            collection,
+            hydrateBlobRefs(record),
+          );
+        } catch (err) {
+          console.error(`Invalid record for ${uri}:`, err);
+          return;
+        }
 
-        indexService.insertRecord({
-          uri,
-          cid,
-          did,
-          collection,
-          json: stringifyLex(record),
-          indexedAt: new Date().toISOString(),
-        });
+        try {
+          indexService.insertRecord({
+            uri,
+            cid,
+            did,
+            collection,
+            json: stringifyLex(record),
+            indexedAt: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.error(`Failed to insert record for ${uri}:`, err);
+          return;
+        }
       } else if (operation === "delete") {
-        indexService.deleteRecord(uri);
+        try {
+          indexService.deleteRecord(uri);
+        } catch (err) {
+          console.error(`Failed to delete record for ${uri}:`, err);
+          return;
+        }
       }
     },
   });
@@ -2114,12 +2129,21 @@ async function createLabelerSubscriptions(
       handleEvent: (event) => {
         // On the first event, clear the cache (assuming full backfill)
         if (isFirstEvent) {
-          indexService.clearLabels();
+          try {
+            indexService.clearLabels();
+          } catch (error) {
+            console.error("Error clearing labels cache:", error);
+          }
           isFirstEvent = false;
         }
+        // @TODO: validate label
         if (event.labels && event.labels.length > 0) {
           for (const label of event.labels) {
-            indexService.insertLabel(label);
+            try {
+              indexService.insertLabel(label);
+            } catch (error) {
+              console.error("Error inserting label:", error);
+            }
           }
         }
       },
