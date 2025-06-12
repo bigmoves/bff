@@ -1,48 +1,47 @@
-import { Record as BffBasicProfile } from "$lexicon/types/dev/fly/bffbasic/profile.ts";
+import { Record as Profile } from "$lexicon/types/dev/fly/bffbasic/profile.ts";
 import { BffContext, RouteHandler } from "@bigmoves/bff";
-import { photoProcessor } from "../uploads.tsx";
 
 export const handler: RouteHandler = async (
   req,
   _params,
   ctx: BffContext,
 ) => {
+  const { did, handle } = ctx.requireAuth();
   const formData = await req.formData();
   const displayName = formData.get("displayName") as string;
   const description = formData.get("description") as string;
-  const uploadId = formData.get("uploadId") as string;
+  const file = formData.get("file") as File | null;
 
-  if (!ctx.currentUser) {
-    return new Response("User not signed in", { status: 401 });
-  }
-
-  if (!ctx.agent) {
-    return new Response("Agent not initialized", { status: 500 });
-  }
-
-  const record = ctx.indexService.getRecord<BffBasicProfile>(
-    `at://${ctx.currentUser.did}/dev.fly.bffbasic.profile/self`,
+  const record = ctx.indexService.getRecord<Profile>(
+    `at://${did}/dev.fly.bffbasic.profile/self`,
   );
 
   if (!record) {
     return new Response("Profile record not found", { status: 404 });
   }
 
-  await ctx.updateRecord<BffBasicProfile>(
-    "dev.fly.bffbasic.profile",
-    "self",
-    {
+  if (file) {
+    try {
+      const blobResponse = await ctx.agent?.uploadBlob(file);
+      record.avatar = blobResponse?.data?.blob;
+    } catch (e) {
+      console.error("Failed to upload avatar:", e);
+    }
+  }
+
+  try {
+    await ctx.updateRecord<Profile>("dev.fly.bffbasic.profile", "self", {
       displayName,
       description,
-      avatar: photoProcessor.getUploadStatus(uploadId)?.blobRef ??
-        record.avatar,
-    },
-  );
+      avatar: record.avatar,
+    });
+  } catch (e) {
+    console.error("Error updating record:", e);
+    const errorMessage = e instanceof Error
+      ? e.message
+      : "Unknown error occurred";
+    return new Response(errorMessage, { status: 400 });
+  }
 
-  return new Response(null, {
-    status: 303,
-    headers: {
-      "HX-Redirect": `/profile/${ctx.currentUser.handle}`,
-    },
-  });
+  return ctx.redirect(`/profile/${handle}`);
 };

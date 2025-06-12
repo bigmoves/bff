@@ -6,7 +6,6 @@ import { handler as index } from "./routes/index.tsx";
 import { handler as onboard } from "./routes/onboard.tsx";
 import { handler as profile } from "./routes/profile.tsx";
 import { handler as profileUpdate } from "./routes/profile_update.tsx";
-import { avatarUploadRoutes } from "./uploads.tsx";
 
 export const routes: BffMiddleware[] = [
   // pages
@@ -15,19 +14,16 @@ export const routes: BffMiddleware[] = [
   route("/onboard", onboard),
 
   // handlers
-  route("/profile", ["POST"], profileUpdate),
+  route("/profile", ["PUT"], profileUpdate),
 
   // ui
   route("/dialogs/profile", dialogsProfile),
   route("/dialogs/avatar/:handle", dialogsAvatar),
 
-  // uploads
-  ...avatarUploadRoutes(),
-
   // not found
   route("*", ["GET"], (req, _params, ctx) => {
     const { pathname } = new URL(req.url);
-    if (pathname.startsWith("/static/")) {
+    if (pathname.startsWith("/build/")) {
       return ctx.next();
     }
     return ctx.render(

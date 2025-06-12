@@ -12,15 +12,26 @@ export function Root(props: RootProps<State>) {
       <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <script src="https://unpkg.com/htmx.org@1.9.10" />
-        <script src="https://unpkg.com/hyperscript.org@0.9.14" />
         <link
           rel="stylesheet"
           href="https://unpkg.com/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"
           preload
         />
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
-        <link rel="stylesheet" href="/static/styles.css" />
+        <link
+          rel="stylesheet"
+          href={`/build/styles.css?${
+            props.ctx.fileFingerprints.get(
+              "styles.css",
+            )
+          }`}
+        />
+        <script
+          type="module"
+          src={`/build/app.esm.js?${
+            props.ctx.fileFingerprints.get("app.esm.js")
+          }`}
+        />
       </head>
       <body>
         <Layout>

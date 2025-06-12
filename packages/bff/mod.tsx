@@ -77,10 +77,18 @@ export async function bff(opts: BffOptions) {
     didCache,
   });
 
+  const fileFingerprints = await generateFingerprints(bffConfig);
+
   const db = createDb(bffConfig);
   const idxService = indexService(db);
   const oauthClient = await createOauthClient(db, bffConfig);
-  const handler = createBffHandler(db, oauthClient, bffConfig, didResolver);
+  const handler = createBffHandler({
+    db,
+    oauthClient,
+    cfg: bffConfig,
+    didResolver,
+    fileFingerprints,
+  });
   const jetstream = createSubscription(idxService, bffConfig);
   const labelerMap = await createLabelerSubscriptions(
     didResolver,
@@ -185,6 +193,7 @@ function configureBff(cfg: BffOptions): BffConfig {
     oauthScope: cfg.oauthScope ?? "atproto transition:generic",
     middlewares: cfg.middlewares ?? [],
     rootElement: cfg.rootElement ?? Root,
+    buildDir: cfg.buildDir ?? "build",
   };
 }
 
@@ -707,25 +716,45 @@ const indexService = (db: Database): IndexService => {
   };
 };
 
-function createBffHandler(
-  db: Database,
-  oauthClient: AtprotoOAuthClient,
-  cfg: BffConfig,
-  didResolver: DidResolver,
-) {
+function createBffHandler({
+  db,
+  oauthClient,
+  cfg,
+  didResolver,
+  fileFingerprints,
+}: {
+  db: Database;
+  oauthClient: AtprotoOAuthClient;
+  cfg: BffConfig;
+  didResolver: DidResolver;
+  fileFingerprints: Map<string, string>;
+}) {
   const inner = handler;
-  const withMiddlewares = composeMiddlewares(db, oauthClient, cfg, didResolver);
+  const withMiddlewares = composeMiddlewares({
+    db,
+    oauthClient,
+    cfg,
+    didResolver,
+    fileFingerprints,
+  });
   return function handler(req: Request, connInfo: Deno.ServeHandlerInfo) {
     return withMiddlewares(req, connInfo, inner);
   };
 }
 
-function composeMiddlewares(
-  db: Database,
-  oauthClient: AtprotoOAuthClient,
-  cfg: BffConfig,
-  didResolver: DidResolver,
-) {
+function composeMiddlewares({
+  db,
+  oauthClient,
+  cfg,
+  didResolver,
+  fileFingerprints,
+}: {
+  db: Database;
+  oauthClient: AtprotoOAuthClient;
+  cfg: BffConfig;
+  didResolver: DidResolver;
+  fileFingerprints: Map<string, string>;
+}) {
   return async (
     req: Request,
     _connInfo: Deno.ServeHandlerInfo,
@@ -795,6 +824,7 @@ function composeMiddlewares(
       getNotifications: getNotificationsFn,
       updateSeen: updateSeenFn,
       getLabelerDefinitions: getLabelerDefinitionsFn,
+      fileFingerprints,
     };
 
     ctx.render = render(ctx, cfg);
@@ -835,7 +865,7 @@ function composeMiddlewares(
 async function handler(req: Request, ctx: BffContext) {
   const { pathname } = new URL(req.url);
 
-  if (pathname.startsWith("/static/")) {
+  if (pathname.startsWith(`/${ctx.cfg.buildDir}/`)) {
     return serveDir(req, {
       fsRoot: ctx.cfg.rootDir,
     });
@@ -2151,4 +2181,35 @@ async function createLabelerSubscriptions(
     labelerMap.set(did, labeler);
   }
   return labelerMap;
+}
+
+async function generateFingerprints(
+  cfg: BffConfig,
+): Promise<Map<string, string>> {
+  const staticFilesHash = new Map<string, string>();
+
+  const buildDirPath = join(Deno.cwd(), cfg.buildDir);
+  try {
+    await Deno.stat(buildDirPath);
+  } catch (_err) {
+    await Deno.mkdir(buildDirPath, { recursive: true });
+  }
+
+  for (const entry of Deno.readDirSync(join(Deno.cwd(), cfg.buildDir))) {
+    if (
+      entry.isFile &&
+      (entry.name.endsWith(".js") || entry.name.endsWith(".css"))
+    ) {
+      const fileContent = await Deno.readFile(
+        join(Deno.cwd(), cfg.buildDir, entry.name),
+      );
+      const hashBuffer = await crypto.subtle.digest("SHA-256", fileContent);
+      const hash = Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      staticFilesHash.set(entry.name, hash);
+    }
+  }
+
+  return staticFilesHash;
 }

@@ -5,7 +5,10 @@
     "typed-htmx": "npm:typed-htmx@^0.3.1"
   },
   "tasks": {
-    "dev": "deno run -A --watch main.tsx",
+    "start": "deno run -A ./main.tsx",
+    "dev": "deno run \"dev:*\"",
+    "dev:static": "rm -rf build && cp -r static/. build",
+    "dev:server": "deno run -A --watch ./main.tsx",
     "codegen": "deno run -A ../../packages/bff-cli/mod.ts lexgen"
   },
   "compilerOptions": {

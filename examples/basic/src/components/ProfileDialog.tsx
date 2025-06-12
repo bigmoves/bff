@@ -1,49 +1,44 @@
 import { ProfileView } from "$lexicon/types/dev/fly/bffbasic/defs.ts";
-import { Record as BffBasicProfile } from "$lexicon/types/dev/fly/bffbasic/profile.ts";
 import { Button, Dialog, Input, Textarea } from "@bigmoves/bff/components";
-import { AvatarForm } from "./AvatarForm.tsx";
+import { AvatarInput } from "./AvatarInput.tsx";
 
-type Props = Readonly<{
+export function ProfileDialog({
+  profile,
+}: Readonly<{
   profile: ProfileView;
-  profileRecord: BffBasicProfile;
-}>;
-
-export function ProfileDialog(
-  { profile, profileRecord }: Props,
-) {
+}>) {
   return (
-    <Dialog>
+    <Dialog class="z-100">
       <Dialog.Content class="relative">
         <Dialog.X class="fill-zinc-950" />
         <Dialog.Title>Edit my profile</Dialog.Title>
-        <div>
-          <AvatarForm
-            src={profile.avatar}
-            alt={profile.handle}
-          />
-        </div>
         <form
-          hx-post="/profile"
-          hx-swap="none"
-          _="on htmx:afterOnLoad trigger closeDialog"
+          id="profile-form"
+          hx-encoding="multipart/form-data"
+          _="on submit
+              halt the event
+              put 'Updating...' into #submit-button.innerText
+              add @disabled to #submit-button
+              call BFF.profileDialog.updateProfile(me)
+          on htmx:afterOnLoad
+            put 'Update' into #submit-button.innerText
+            remove @disabled from #submit-button
+            if event.detail.xhr.status != 200
+              alert('Error: ' + event.detail.xhr.responseText)
+            else
+              trigger closeDialog
+            end"
         >
-          <div id="image-input">
-            <input
-              type="hidden"
-              name="avatarCid"
-              value={profileRecord.avatar
-                ? profileRecord.avatar.ref.toString()
-                : undefined}
-            />
-          </div>
+          <AvatarInput profile={profile} />
           <div class="mb-4 relative">
             <label htmlFor="displayName">Display Name</label>
             <Input
               type="text"
               id="displayName"
               name="displayName"
-              class="input"
+              placeholder="e.g. Alice Lastname"
               value={profile.displayName}
+              autoFocus
             />
           </div>
           <div class="mb-4 relative">
@@ -51,22 +46,28 @@ export function ProfileDialog(
             <Textarea
               id="description"
               name="description"
+              placeholder="Tell us about yourself"
               rows={4}
-              class="input"
             >
               {profile.description}
             </Textarea>
           </div>
           <Button
             type="submit"
-            class="btn btn-primary w-full mb-2"
+            id="submit-button"
             variant="primary"
+            class="w-full"
           >
             Update
           </Button>
-          <Dialog.Close class="w-full">
+          <Button
+            variant="secondary"
+            type="button"
+            class="w-full"
+            _={Dialog._closeOnClick}
+          >
             Cancel
-          </Dialog.Close>
+          </Button>
         </form>
       </Dialog.Content>
     </Dialog>

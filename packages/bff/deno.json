@@ -1,6 +1,6 @@
 {
   "name": "@bigmoves/bff",
-  "version": "0.3.0-beta.35",
+  "version": "0.3.0-beta.36",
   "license": "MIT",
   "tasks": {
     "tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./styles/input.css -o ./styles/output.css -m",
@@ -44,7 +44,7 @@
   },
   "exports": {
     ".": "./mod.tsx",
-    "./utils.ts": "./utils.ts",
-    "./components": "./components/mod.tsx"
+    "./components": "./components/mod.tsx",
+    "./browser": "./browser/mod.ts"
   }
 }

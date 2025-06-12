@@ -2,3 +2,4 @@ node_modules
 *.db*
 .DS_Store
 *.fly.toml
+build

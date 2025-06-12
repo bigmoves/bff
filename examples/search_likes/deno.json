@@ -8,10 +8,13 @@
     "typed-htmx": "npm:typed-htmx@^0.3.1"
   },
   "tasks": {
+    "start": "deno run -A ./main.tsx",
     "dev": "deno run \"dev:*\"",
-    "codegen": "deno run -A ../../packages/bff-cli/mod.ts lexgen",
-    "dev:server": "deno run -A --watch main.tsx",
-    "dev:tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./input.css -o ./static/styles.css --watch"
+    "build": "deno task build:tailwind",
+    "build:tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./input.css -o ./build/styles.css --minify",
+    "dev:server": "deno run -A --watch ./main.tsx",
+    "dev:tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./input.css -o ./build/styles.css --watch",
+    "codegen": "deno run -A ../../packages/bff-cli/mod.ts lexgen"
   },
   "compilerOptions": {
     "jsx": "precompile",

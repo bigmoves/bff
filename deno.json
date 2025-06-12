@@ -2,7 +2,6 @@
   "workspace": [
     "./packages/bff",
     "./packages/bff-cli",
-    "./packages/bff-photo-processor",
     "./examples/basic",
     "./examples/blog",
     "./examples/statusphere",

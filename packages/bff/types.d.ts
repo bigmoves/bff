@@ -73,8 +73,10 @@ export type BffOptions = {
   collections?: string[];
   /** Collections to index off the firehose from external lexicons */
   externalCollections?: string[];
-  /** OAuth Scopes */
-  /** @default "atproto transition:generic" */
+  /**
+   * ATProto OAuth Scopes
+   * @default "atproto transition:generic"
+   */
   oauthScope?: string;
   /** Functions that are called before rendering and can modify the content or make other changes. */
   middlewares?: BffMiddleware[];
@@ -84,6 +86,11 @@ export type BffOptions = {
   appLabelers?: string[];
   /** The collection declaring the labeler e.g. app.bsky.labeler.service */
   appLabelerCollection?: string;
+  /**
+   * The static/public folder relative to the root directory.
+   * @default "static"
+   */
+  buildDir?: string;
   /** The root element of the app */
   rootElement?: RootElement;
   /** Called when the server starts listening. */
@@ -131,6 +138,7 @@ export type BffConfig = BffOptions & EnvConfig & {
   queueDatabaseUrl: string;
   oauthScope: string;
   rootElement: RootElement;
+  buildDir: string;
 };
 
 export type LabelerPolicies = {
@@ -258,6 +266,7 @@ export type BffContext<State = Record<string, unknown>> = {
   getNotifications: <T extends Record<string, unknown>>() => T[];
   updateSeen: () => void;
   getLabelerDefinitions: () => Promise<Record<string, LabelerPolicies>>;
+  fileFingerprints: Map<string, string>;
 };
 
 export type onSignedInArgs = {
@@ -277,7 +286,7 @@ export type OauthMiddlewareOptions = {
 };
 
 export type RootProps<T = Record<string, unknown>> = {
-  ctx: BffContext<T>;
+  ctx: BffContext<T & { staticFilesHash?: Map<string, string> }>;
   children: ComponentChildren;
 };
 

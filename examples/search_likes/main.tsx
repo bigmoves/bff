@@ -233,7 +233,7 @@ function Root(props: Readonly<RootProps<State>>) {
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <script src="https://unpkg.com/htmx.org@1.9.10"></script>
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
-        <link rel="stylesheet" href="/static/styles.css" />
+        <link rel="stylesheet" href="/build/styles.css" />
       </head>
       <body class="h-full w-full">
         <Layout>

@@ -1,20 +1,26 @@
 import { backfillCollections, bff } from "@bigmoves/bff";
 import { parseArgs } from "@std/cli/parse-args";
 import { join, resolve } from "@std/path";
+import { bundleJs } from "./build.ts";
+
+const DEV = Deno.env.get("DEV") === "true" || false;
+const CLI_PATH = DEV
+  ? "../bff/packages/bff-cli/mod.ts"
+  : "jsr:@bigmoves/bff-cli";
 
 const LEXICON_DIR = "lexicons";
 const CODEGEN_DIR = "__generated__";
 
 const MAIN_NAME = "main.tsx";
 const MAIN_CONTENTS = `
-import { bff, oauth, route, JETSTREAM } from "@bigmoves/bff";
+import { bff, route, JETSTREAM } from "@bigmoves/bff";
+import { Root } from "./app.tsx";
 
 bff({
   appName: "AT Protocol App",
-  collections: ["xyz.statusphere.status"],
   jetstreamUrl: JETSTREAM.WEST_1,
+  rootElement: Root,
   middlewares: [
-    oauth(),
     route("/", (_req, _params, ctx) => {
       return ctx.render(<div>Hello, atmosphere!</div>);
     }),
@@ -23,17 +29,81 @@ bff({
 
 `;
 
+const APP_NAME = "app.tsx";
+const APP_CONTENTS = `
+import { RootProps } from "@bigmoves/bff";
+
+export type State = {
+ /** State passed down through middleware **/
+};
+
+export function Root(props: RootProps<State>) {
+  return (
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <script
+          type="module"
+          key="app.esm.js"
+          src={\`/build/app.esm.js?\${props.ctx.fileFingerprints.get("app.esm.js")}\`}
+        />
+        <link
+          rel="stylesheet"
+          href={\`/build/styles.css?\${props.ctx.fileFingerprints.get(
+            "styles.css"
+          )}\`}
+        />
+      </head>
+      <body>{props.children}</body>
+    </html>
+  );
+}`;
+
+const STATIC_MOD_NAME = "mod.ts";
+const STATIC_MOD_CONTENTS = `
+import htmx from "htmx.org";
+import _hyperscript from "hyperscript.org";
+
+_hyperscript.browserInit();
+
+type BFFGlobal = typeof globalThis & {
+  htmx: typeof htmx;
+  _hyperscript: typeof _hyperscript;
+  BFF: {
+    /** Add your BFF global properties here **/
+    [key: string]: unknown;
+  };
+};
+
+const g = globalThis as BFFGlobal;
+g.htmx = g.htmx ?? htmx;
+g._hyperscript = g._hyperscript ?? _hyperscript;
+g.BFF = g.BFF ?? {};
+`;
+
 const DENO_JSON_NAME = "deno.json";
 const DENO_JSON_CONTENTS = `{
   "imports": {
     "$lexicon/": "./__generated__/",
     "@bigmoves/bff": "jsr:@bigmoves/bff",
+    "@tailwindcss/cli": "npm:@tailwindcss/cli@^4.0.12",
+    "htmx.org": "npm:htmx.org@^1.9.12",
+    "hyperscript.org": "npm:hyperscript.org@^0.9.14",
     "preact": "npm:preact@^10.26.5",
+    "tailwindcss": "npm:tailwindcss@^4.0.12",
     "typed-htmx": "npm:typed-htmx@^0.3.1"
-  },
+  },${DEV ? `"patch": ["../bff/packages/bff"],` : ""}
   "tasks": {
-    "dev": "deno run -A --watch main.tsx",
-    "codegen": "deno run -A jsr:@bigmoves/bff-cli lexgen"
+    "start": "deno run -A ./src/main.tsx",
+    "dev": "deno run \\"dev:*\\"",
+    "build": "deno task build:static && deno task build:tailwind",
+    "build:static": "deno run -A ../../packages/bff-cli/mod.ts build src/static/mod.ts",
+    "build:tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./input.css -o ./build/styles.css --minify",
+    "dev:build": "DEV=true deno -A --watch=src/static/ ${CLI_PATH} build src/static/mod.ts",
+    "dev:server": "deno run -A --watch ./src/main.tsx",
+    "dev:tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./input.css -o ./build/styles.css --watch",
+    "codegen": "deno run -A ${CLI_PATH} lexgen"
   },
   "compilerOptions": {
     "jsx": "precompile",
@@ -44,8 +114,7 @@ const DENO_JSON_CONTENTS = `{
 `;
 
 const GLOBALS_NAME = "globals.d.ts";
-const GLOBALS_CONTENTS = `
-import "typed-htmx";
+const GLOBALS_CONTENTS = `import "typed-htmx";
 
 declare module "preact" {
   namespace JSX {
@@ -55,13 +124,15 @@ declare module "preact" {
 `;
 
 const GITIGNORE_NAME = ".gitignore";
-const GITIGNORE_CONTENTS = `
-node_modules
+const GITIGNORE_CONTENTS = `node_modules
 *.db*
 .DS_Store
 .env
 *.log
 `;
+
+const INPUT_CSS_NAME = "input.css";
+const INPUT_CSS_CONTENTS = `@import "tailwindcss";`;
 
 if (import.meta.main) {
   const flags = parseArgs(Deno.args, {
@@ -118,17 +189,6 @@ if (import.meta.main) {
       console.log("Private keys generated and saved to .env file");
       break;
     }
-    case "tailwind": {
-      await installTailwindDeps();
-      const existingConfig = await Deno.readTextFile("./deno.json");
-      const updatedConfig = addTailwindTasksToDenoJson(existingConfig);
-      await Deno.writeTextFile("./deno.json", updatedConfig);
-      await Deno.writeTextFile(
-        "./input.css",
-        `@import "tailwindcss";`,
-      );
-      break;
-    }
     case "sync": {
       bff({
         appName: "CLI Sync",
@@ -147,6 +207,18 @@ if (import.meta.main) {
           Deno.exit(0);
         },
       });
+      break;
+    }
+    case "build": {
+      if (!Deno.args[1] || Deno.args[1].startsWith("-")) {
+        console.error("Please provide an entry point to your static js/ts.");
+        Deno.exit(0);
+      }
+      const entryPoint = Deno.args[1];
+      if (!DEV) {
+        await cleanDir("build");
+      }
+      await bundleJs(entryPoint, "build");
       break;
     }
     default:
@@ -178,14 +250,26 @@ async function init(directory: string) {
     }
   }
 
-  await Deno.mkdir(join(directory, "lexicons"), { recursive: true });
   await Deno.mkdir(join(directory, "static"), { recursive: true });
-  await Deno.writeTextFile(join(directory, MAIN_NAME), MAIN_CONTENTS);
-  await Deno.writeTextFile(join(directory, DENO_JSON_NAME), DENO_JSON_CONTENTS);
+  await Deno.mkdir(join(directory, "src"), { recursive: true });
+  await Deno.writeTextFile(join(directory, "src", MAIN_NAME), MAIN_CONTENTS);
+  await Deno.writeTextFile(join(directory, "src", APP_NAME), APP_CONTENTS);
+  await Deno.mkdir(join(directory, "src", "static"), { recursive: true });
+  await Deno.writeTextFile(
+    join(directory, "src", "static", STATIC_MOD_NAME),
+    STATIC_MOD_CONTENTS,
+  );
   await Deno.writeTextFile(join(directory, GLOBALS_NAME), GLOBALS_CONTENTS);
   await Deno.writeTextFile(join(directory, GITIGNORE_NAME), GITIGNORE_CONTENTS);
+  await Deno.writeTextFile(join(directory, INPUT_CSS_NAME), INPUT_CSS_CONTENTS);
+  await Deno.writeTextFile(join(directory, DENO_JSON_NAME), DENO_JSON_CONTENTS);
 
-  console.log("Bff initialized, run `deno task dev` to get started.");
+  Deno.chdir(directory);
+  await new Deno.Command("git", { args: ["init"] }).output();
+
+  console.log(
+    `BFF initialized, cd into ${directory} and run \`deno task dev\` to get started.`,
+  );
 }
 
 async function codegen(
@@ -244,11 +328,13 @@ function printHelp(): void {
   console.log(`Usage: bff [OPTIONS...]`);
   console.log("\nArguments:");
   console.log("  init <directory>          Initialize a new bff project");
+  console.log(
+    "  build <entry-point>       Bundle static JavaScript/TypeScript",
+  );
   console.log("  lexgen                    Generate types from lexicons");
   console.log(
     "  generate-jwks             Generate private keys and save to .env file",
   );
-  console.log("  tailwind                  Install and set up Tailwind CSS");
   console.log("  sync                      Sync collections to the database");
   console.log("\nOptional flags:");
   console.log("  -h, --help                Display help");
@@ -288,36 +374,6 @@ async function getJsonFilesAndDirs(dirPath: string): Promise<string[]> {
   return result;
 }
 
-async function installTailwindDeps() {
-  const { stderr } = await new Deno.Command(Deno.execPath(), {
-    args: [
-      "add",
-      "npm:@tailwindcss/cli",
-      "npm:tailwindcss",
-    ],
-  }).output();
-  const error = new TextDecoder().decode(stderr);
-  if (error) {
-    console.error(error);
-  }
-}
-
-function addTailwindTasksToDenoJson(existingDenoJson: string) {
-  const config = typeof existingDenoJson === "string"
-    ? JSON.parse(existingDenoJson)
-    : existingDenoJson;
-
-  config.tasks = {
-    ...(config.tasks || {}),
-    "dev": 'deno run "dev:*"',
-    "dev:server": "deno run -A --watch ./main.tsx",
-    "dev:tailwind":
-      "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./input.css -o ./static/styles.css --watch",
-  };
-
-  return JSON.stringify(config, null, 2);
-}
-
 async function generateECKey(kid: string): Promise<string> {
   const keyPair = await crypto.subtle.generateKey(
     {
@@ -342,4 +398,14 @@ async function generateECKey(kid: string): Promise<string> {
   };
 
   return JSON.stringify(jwk);
+}
+
+async function cleanDir(dir: string) {
+  try {
+    await Deno.remove(dir, { recursive: true });
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) {
+      throw err;
+    }
+  }
 }

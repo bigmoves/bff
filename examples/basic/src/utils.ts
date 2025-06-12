@@ -8,15 +8,6 @@ export async function onSignedIn({
   actor,
   ctx,
 }: onSignedInArgs) {
-  await ctx.backfillCollections({
-    collections: [],
-    externalCollections: [
-      "dev.fly.bffbasic.profile",
-      "app.bsky.actor.profile",
-    ],
-    repos: [actor.did],
-  });
-
   const profileResults = ctx.indexService.getRecords<ProfileRecord>(
     "dev.fly.bffbasic.profile",
     {
@@ -29,6 +20,18 @@ export async function onSignedIn({
   if (profile) {
     console.log("Profile already exists");
     return `/profile/${actor.handle}`;
+  }
+
+  try {
+    await ctx.backfillCollections({
+      externalCollections: [
+        "app.bsky.actor.profile",
+      ],
+      repos: [actor.did],
+    });
+  } catch (error) {
+    console.error("Failed to backfill collections:", error);
+    return;
   }
 
   const bskyProfileResults = ctx.indexService.getRecords<BskyProfileRecord>(
