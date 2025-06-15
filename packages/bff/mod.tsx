@@ -63,7 +63,7 @@ export type {
   RecordTable,
   RootProps,
   RouteHandler,
-  WithBffMeta,
+  WithBffMeta
 } from "./types.d.ts";
 
 export { CSS } from "./styles.ts";
@@ -153,6 +153,7 @@ export async function bff(opts: BffOptions) {
           },
         });
       }
+      console.error("Internal server error:", err);
       return new Response("Internal Server Error", {
         status: 500,
       });
@@ -1783,6 +1784,7 @@ export function backfillCollections(
         }`,
       );
     }
+
     const agent = new Agent("https://relay1.us-west.bsky.network");
 
     let allRepos: string[] = [];
@@ -2104,10 +2106,11 @@ function getLabelerDefinitions(
     const definitionsByDid: Record<string, LabelerPolicies> = {};
 
     for (const did of cfg.appLabelers) {
-      const atpData = await didResolver.resolveAtprotoData(did);
-
-      if (!atpData) {
-        console.error(`Failed to resolve Atproto data for DID: ${did}`);
+      let atpData: AtprotoData | undefined;
+      try {
+        atpData = await didResolver.resolveAtprotoData(did);
+      } catch (error) {
+        console.error(`Failed to resolve Atproto data for ${did}`, error);
         continue;
       }
 
