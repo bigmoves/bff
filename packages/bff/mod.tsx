@@ -63,7 +63,7 @@ export type {
   RecordTable,
   RootProps,
   RouteHandler,
-  WithBffMeta
+  WithBffMeta,
 } from "./types.d.ts";
 
 export { CSS } from "./styles.ts";
@@ -788,6 +788,7 @@ function composeMiddlewares({
     }
 
     const createRecordFn = createRecord(agent, idxService, cfg);
+    const createRecordsFn = createRecords(agent, idxService, cfg);
     const updateRecordFn = updateRecord(agent, idxService, cfg);
     const updateRecordsFn = updateRecords(agent, idxService, cfg);
     const deleteRecordFn = deleteRecord(agent, idxService);
@@ -806,6 +807,7 @@ function composeMiddlewares({
       currentUser,
       agent,
       createRecord: createRecordFn,
+      createRecords: createRecordsFn,
       updateRecord: updateRecordFn,
       updateRecords: updateRecordsFn,
       deleteRecord: deleteRecordFn,
@@ -1125,6 +1127,79 @@ function createRecord(
       indexedAt: new Date().toISOString(),
     });
     return uri;
+  };
+}
+
+function createRecords(
+  agent: Agent | undefined,
+  indexService: IndexService,
+  cfg: BffConfig,
+) {
+  return async (creates: {
+    collection: string;
+    rkey?: string;
+    data: { [_ in string]: unknown };
+  }[]) => {
+    const did = agent?.assertDid;
+    if (!did) throw new Error("Agent is not authenticated");
+
+    const records = creates.map(({ collection, data }) => ({
+      $type: collection,
+      ...data,
+    }));
+
+    creates = creates.map((c) => ({
+      ...c,
+      rkey: c.rkey || TID.nextStr(),
+    }));
+
+    creates.forEach(({ collection }, i) => {
+      assert(cfg.lexicons.assertValidRecord(collection, records[i]));
+    });
+
+    const results: string[] = [];
+
+    try {
+      const response = await agent.com.atproto.repo.applyWrites({
+        repo: did,
+        validate: false,
+        writes: creates.map(({ collection, rkey, data }) => ({
+          $type: "com.atproto.repo.applyWrites#create",
+          collection,
+          rkey,
+          value: data,
+        })),
+      });
+
+      const cidMap = new Map<string, string>();
+      for (const result of response?.data?.results ?? []) {
+        if (result.$type === "com.atproto.repo.applyWrites#createResult") {
+          cidMap.set(result.uri, result.cid);
+        }
+      }
+
+      for (let i = 0; i < creates.length; i++) {
+        const { collection, rkey } = creates[i];
+        const record = records[i];
+
+        const uri = `at://${did}/${collection}/${rkey}`;
+
+        indexService.insertRecord({
+          uri,
+          cid: cidMap.get(uri) ?? "",
+          did,
+          collection,
+          json: stringifyLex(record),
+          indexedAt: new Date().toISOString(),
+        });
+
+        results.push(uri);
+      }
+    } catch (error) {
+      console.error("Error creating records:", error);
+      throw new Error("Failed to create records");
+    }
+    return results;
   };
 }
 

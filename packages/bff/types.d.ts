@@ -222,6 +222,13 @@ export type BffContext<State = Record<string, unknown>> = {
     data: Partial<T>,
     self?: boolean,
   ) => Promise<string>;
+  createRecords: <T>(
+    updates: Array<{
+      collection: string;
+      rkey?: string;
+      data: Partial<T>;
+    }>,
+  ) => Promise<string[]>;
   updateRecord: <T>(
     collection: string,
     rkey: string,
