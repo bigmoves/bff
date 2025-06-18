@@ -640,7 +640,6 @@ const indexService = (
       for (const key of indexedKeys) {
         const value = json[key];
         if (value !== undefined) {
-          console.log("record_kv", record.uri, key, String(value));
           db.prepare(
             `INSERT INTO record_kv (uri, key, value) VALUES (?, ?, ?) ON CONFLICT(uri, key) DO UPDATE SET value = excluded.value`,
           ).run(record.uri, key, String(value));
