@@ -91,6 +91,8 @@ export type BffOptions = {
    * @default "static"
    */
   buildDir?: string;
+  /** Collection key map. Define which key/value pairs to index. */
+  collectionKeyMap?: Record<string, string[]>;
   /** The root element of the app */
   rootElement?: RootElement;
   /** Called when the server starts listening. */
@@ -180,6 +182,16 @@ export type QueryOptions = {
   cursor?: string;
 };
 
+export type CollectionKeyMap = Record<string, string[]>;
+
+export type RecordKvTable = {
+  uri: string;
+  collection: string;
+  key: string;
+  value: string;
+  indexedAt: string;
+};
+
 export type IndexService = {
   getRecords: <T extends Record<string, unknown>>(
     collection: string,
@@ -190,7 +202,7 @@ export type IndexService = {
   ) => T | undefined;
   insertRecord: (record: RecordTable) => void;
   updateRecord: (record: RecordTable) => void;
-  updateRecords: (records: RecordTable[]) => void;
+  countRecords: (collection: string, options?: QueryOptions) => number;
   deleteRecord: (uri: string) => void;
   insertActor: (actor: ActorTable) => void;
   getActor: (did: string) => ActorTable | undefined;

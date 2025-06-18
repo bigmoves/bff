@@ -142,6 +142,7 @@ if (import.meta.main) {
       "collections",
       "repos",
       "external-collections",
+      "collection-key-map",
       "unstable-lexicons",
     ],
     alias: { h: "help" },
@@ -190,9 +191,13 @@ if (import.meta.main) {
       break;
     }
     case "sync": {
+      const collectionKeyMap = flags["collection-key-map"]
+        ? JSON.parse(flags["collection-key-map"])
+        : undefined;
       bff({
         appName: "CLI Sync",
         databaseUrl: flags.db,
+        collectionKeyMap,
         onListen: async ({ indexService, cfg }) => {
           await backfillCollections(
             indexService,
