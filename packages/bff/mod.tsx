@@ -281,7 +281,6 @@ function createDb(cfg: BffConfig) {
   return db;
 }
 
-// Update: buildWhereClause now takes a kvAliasMap for indexed keys
 function buildWhereClause(
   condition: Where,
   tableColumns: string[],
