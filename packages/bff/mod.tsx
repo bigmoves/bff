@@ -71,7 +71,6 @@ export { CSS } from "./styles.ts";
 export async function bff(opts: BffOptions) {
   const bffConfig = configureBff(opts);
 
-  console.log(bffConfig.collectionKeyMap);
   const didCache = new MemoryCache();
   const didResolver = new DidResolver({
     plcUrl: bffConfig.plcDirectoryUrl,
@@ -230,6 +229,10 @@ function createDb(cfg: BffConfig) {
       "indexedAt" TEXT NOT NULL
     );
 
+    CREATE INDEX IF NOT EXISTS idx_record_did ON record(did);
+    CREATE INDEX IF NOT EXISTS idx_record_collection ON record(collection);
+    CREATE INDEX IF NOT EXISTS idx_record_did_collection ON record(did, collection);
+
     CREATE TABLE IF NOT EXISTS record_kv (
       uri TEXT NOT NULL,
       key TEXT NOT NULL,
@@ -357,7 +360,7 @@ const indexService = (
       const indexedKeys = collectionKeyMap[collection] || [];
       const tableColumns = ["did", "uri", "indexedAt", "cid"];
       let query: string;
-      let params: (string | number | boolean)[] = [];
+      const params: (string | number | boolean)[] = [];
       const kvAliasMap: Record<string, string> = {};
 
       let joinClauses = "";
@@ -547,9 +550,12 @@ const indexService = (
       const sqlParams = params.map((p) =>
         typeof p === "boolean" ? (p ? 1 : 0) : p
       );
-      console.log("SQL Query", query);
-      console.log("SQL Params", sqlParams);
-      const rows = db.prepare(query).all(...sqlParams) as RecordTable[];
+      const rows = timedQuery<RecordTable[]>(
+        db,
+        query,
+        sqlParams,
+        "getRecords",
+      );
 
       let nextCursor: string | undefined;
       if (rows.length > 0) {
@@ -628,7 +634,6 @@ const indexService = (
         record.json,
         record.indexedAt,
       );
-      console.log(cfg?.collectionKeyMap);
       // Sync record_kv
       const collectionKeyMap = cfg?.collectionKeyMap || {};
       const indexedKeys = collectionKeyMap[record.collection] || [];
@@ -812,7 +817,7 @@ const indexService = (
       const indexedKeys = collectionKeyMap[collection] || [];
       const tableColumns = ["did", "uri", "indexedAt", "cid"];
       let query: string;
-      let params: (string | number | boolean)[] = [];
+      const params: (string | number | boolean)[] = [];
       const kvAliasMap: Record<string, string> = {};
 
       let joinClauses = "";
@@ -873,9 +878,12 @@ const indexService = (
       const sqlParams = params.map((p) =>
         typeof p === "boolean" ? (p ? 1 : 0) : p
       );
-      // console.log("SQL Params", sqlParams);
-      // console.log("SQL Query", query);
-      const row = db.prepare(query).get(...sqlParams) as { count: number };
+      const row = timedQuery<{ count: number }>(
+        db,
+        query,
+        sqlParams,
+        "countRecords",
+      );
       return row?.count ?? 0;
     },
   };
@@ -2454,4 +2462,35 @@ async function generateFingerprints(
   }
 
   return staticFilesHash;
+}
+
+function timedQuery<T = unknown>(
+  db: Database,
+  sql: string,
+  params: (string | number)[] = [],
+  label?: string,
+): T {
+  const debugMode = Deno.env.get("DEBUG") === "true";
+  const start = typeof performance !== "undefined"
+    ? performance.now()
+    : Date.now();
+  // Use .all for array results, .get for single row
+  let result: unknown;
+  if (label === "getRecords") {
+    result = db.prepare(sql).all(...params);
+  } else {
+    result = db.prepare(sql).get(...params);
+  }
+  const end = typeof performance !== "undefined"
+    ? performance.now()
+    : Date.now();
+  const elapsed = end - start;
+  if (debugMode) {
+    if (label) {
+      console.log(`[timedQuery] ${label} took ${elapsed.toFixed(2)}ms`);
+    } else {
+      console.log(`[timedQuery] Query took ${elapsed.toFixed(2)}ms`);
+    }
+  }
+  return result as T;
 }
