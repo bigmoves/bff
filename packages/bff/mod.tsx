@@ -71,6 +71,7 @@ export { CSS } from "./styles.ts";
 export async function bff(opts: BffOptions) {
   const bffConfig = configureBff(opts);
 
+  console.log(bffConfig.collectionKeyMap);
   const didCache = new MemoryCache();
   const didResolver = new DidResolver({
     plcUrl: bffConfig.plcDirectoryUrl,
@@ -80,7 +81,7 @@ export async function bff(opts: BffOptions) {
   const fileFingerprints = await generateFingerprints(bffConfig);
 
   const db = createDb(bffConfig);
-  const idxService = indexService(db);
+  const idxService = indexService(db, bffConfig);
   const oauthClient = await createOauthClient(db, bffConfig);
   const handler = createBffHandler({
     db,
@@ -229,6 +230,16 @@ function createDb(cfg: BffConfig) {
       "indexedAt" TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS record_kv (
+      uri TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      PRIMARY KEY (uri, key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_record_kv_uri ON record_kv(uri);
+    CREATE INDEX IF NOT EXISTS idx_record_kv_key_value ON record_kv(key, value);
+
     CREATE TABLE IF NOT EXISTS "rate_limit" (
       "key" TEXT NOT NULL,
       "namespace" TEXT NOT NULL,
@@ -267,82 +278,134 @@ function createDb(cfg: BffConfig) {
   return db;
 }
 
+// Update: buildWhereClause now takes a kvAliasMap for indexed keys
 function buildWhereClause(
   condition: Where,
   tableColumns: string[],
+  indexedKeys: Set<string>,
   params: Array<string | number | boolean>,
+  kvAliasMap?: Record<string, string>,
 ): string {
   if (Array.isArray(condition)) {
-    return condition.map((c) => buildWhereClause(c, tableColumns, params)).join(
+    return condition.map((c) =>
+      buildWhereClause(c, tableColumns, indexedKeys, params, kvAliasMap)
+    ).join(
       " AND ",
     );
   }
-
   if ("AND" in condition) {
     const parts = condition.AND!.map((c) =>
-      `(${buildWhereClause(c, tableColumns, params)})`
+      `(${buildWhereClause(c, tableColumns, indexedKeys, params, kvAliasMap)})`
     );
     return parts.join(" AND ");
   }
-
   if ("OR" in condition) {
     const parts = condition.OR!.map((c) =>
-      `(${buildWhereClause(c, tableColumns, params)})`
+      `(${buildWhereClause(c, tableColumns, indexedKeys, params, kvAliasMap)})`
     );
     return parts.join(" OR ");
   }
-
   if ("NOT" in condition) {
-    return `NOT (${buildWhereClause(condition.NOT!, tableColumns, params)})`;
+    return `NOT (${
+      buildWhereClause(
+        condition.NOT!,
+        tableColumns,
+        indexedKeys,
+        params,
+        kvAliasMap,
+      )
+    })`;
   }
-
   const { field, equals, contains, in: inArray } = condition as WhereCondition;
-
   if (!field) throw new Error("Missing 'field' in condition");
-
   const isDirect = tableColumns.includes(field);
-  const columnExpr = isDirect ? field : `JSON_EXTRACT(json, '$.${field}')`;
-
+  const isIndexed = indexedKeys.has(field);
+  let columnExpr;
+  if (isDirect) {
+    columnExpr = `record.${field}`;
+  } else if (isIndexed && kvAliasMap && kvAliasMap[field]) {
+    columnExpr = `${kvAliasMap[field]}.value`;
+  } else {
+    columnExpr = `JSON_EXTRACT(json, '$.${field}')`;
+  }
   if (equals !== undefined) {
     params.push(equals);
     return `${columnExpr} = ?`;
   }
-
-  if (contains !== undefined) {
-    params.push(`%${contains.toLowerCase()}%`);
-    return `LOWER(${columnExpr}) LIKE ?`;
-  }
-
-  if (Array.isArray(inArray)) {
-    if (inArray.length === 0) return `0 = 1`;
+  if (inArray) {
     const placeholders = inArray.map(() => "?").join(", ");
     params.push(...inArray);
     return `${columnExpr} IN (${placeholders})`;
   }
-
+  if (contains !== undefined) {
+    params.push(`%${contains}%`);
+    return `${columnExpr} LIKE ?`;
+  }
   throw new Error("Unsupported condition format");
 }
 
-const indexService = (db: Database): IndexService => {
+const indexService = (
+  db: Database,
+  cfg: BffConfig,
+): IndexService => {
   return {
     getRecords: <T extends Record<string, unknown>>(
       collection: string,
       options?: QueryOptions,
     ) => {
-      let query = `SELECT * FROM "record" WHERE collection = ?`;
-      const params: string[] = [collection];
+      const collectionKeyMap = cfg?.collectionKeyMap || {};
+      const indexedKeys = new Set(collectionKeyMap[collection] || []);
       const tableColumns = ["did", "uri", "indexedAt", "cid"];
+      let query: string;
+      let params: (string | number | boolean)[] = [];
+      const kvAliasMap: Record<string, string> = {};
+
+      if (indexedKeys.size > 0) {
+        // Join record and record_kv for each indexed key
+        let joinClauses = "";
+        const whereKvClauses: string[] = [];
+        let i = 0;
+        for (const key of indexedKeys) {
+          const alias = `kv${i}`;
+          kvAliasMap[key] = alias;
+          joinClauses +=
+            `\nLEFT JOIN record_kv AS ${alias} ON ${alias}.uri = record.uri AND ${alias}.key = ?`;
+          params.push(key);
+          // If filtering by this key in options.where, set value accordingly
+          let valueParam = "%";
+          if (
+            options?.where && typeof options.where === "object" &&
+            "field" in options.where && options.where.field === key &&
+            options.where.equals !== undefined
+          ) {
+            valueParam = String(options.where.equals);
+          }
+          whereKvClauses.push(`${alias}.value = ?`);
+          params.push(valueParam);
+          i++;
+        }
+        query =
+          `SELECT record.* FROM record${joinClauses} WHERE record.collection = ?`;
+        params.push(collection);
+        if (whereKvClauses.length > 0) {
+          query += ` AND ` + whereKvClauses.join(" AND ");
+        }
+      } else {
+        query = `SELECT * FROM record WHERE collection = ?`;
+        params = [collection];
+      }
 
       const normalizedWhere = Array.isArray(options?.where)
         ? { AND: options.where }
         : options?.where;
-
       if (normalizedWhere) {
         try {
           const whereClause = buildWhereClause(
             normalizedWhere,
             tableColumns,
+            indexedKeys,
             params,
+            kvAliasMap,
           );
           if (whereClause) query += ` AND (${whereClause})`;
         } catch (err) {
@@ -478,7 +541,11 @@ const indexService = (db: Database): IndexService => {
         params.push(options.limit.toString());
       }
 
-      const rows = db.prepare(query).all(...params) as RecordTable[];
+      // Convert boolean params to 0/1 for SQL compatibility
+      const sqlParams = params.map((p) =>
+        typeof p === "boolean" ? (p ? 1 : 0) : p
+      );
+      const rows = db.prepare(query).all(...sqlParams) as RecordTable[];
 
       let nextCursor: string | undefined;
       if (rows.length > 0) {
@@ -557,6 +624,20 @@ const indexService = (db: Database): IndexService => {
         record.json,
         record.indexedAt,
       );
+      console.log(cfg?.collectionKeyMap);
+      // Sync record_kv
+      const collectionKeyMap = cfg?.collectionKeyMap || {};
+      const indexedKeys = collectionKeyMap[record.collection] || [];
+      const json = JSON.parse(record.json);
+      for (const key of indexedKeys) {
+        const value = json[key];
+        if (value !== undefined) {
+          console.log("record_kv", record.uri, key, String(value));
+          db.prepare(
+            `INSERT INTO record_kv (uri, key, value) VALUES (?, ?, ?) ON CONFLICT(uri, key) DO UPDATE SET value = excluded.value`,
+          ).run(record.uri, key, String(value));
+        }
+      }
     },
     updateRecord: (record: RecordTable) => {
       db.prepare(
@@ -568,29 +649,34 @@ const indexService = (db: Database): IndexService => {
         record.indexedAt,
         record.uri,
       );
-    },
-    updateRecords: (records: RecordTable[]) => {
-      db.exec("BEGIN TRANSACTION");
-      try {
-        records.forEach((record) => {
-          db.prepare(
-            `UPDATE "record" SET cid = ?, collection = ?, json = ?, "indexedAt" = ? WHERE uri = ?`,
-          ).run(
-            record.cid,
-            record.collection,
-            record.json,
-            record.indexedAt,
+      // Sync record_kv
+      const collectionKeyMap = cfg?.collectionKeyMap || {};
+      const indexedKeys = collectionKeyMap[record.collection] || [];
+      const json = JSON.parse(record.json);
+      // Remove keys not present anymore
+      const existingKvs = db.prepare(`SELECT key FROM record_kv WHERE uri = ?`)
+        .all(record.uri) as { key: string }[];
+      for (const { key } of existingKvs) {
+        if (!indexedKeys.includes(key) || json[key] === undefined) {
+          db.prepare(`DELETE FROM record_kv WHERE uri = ? AND key = ?`).run(
             record.uri,
+            key,
           );
-        });
-        db.exec("COMMIT");
-      } catch (err) {
-        db.exec("ROLLBACK");
-        throw err;
+        }
+      }
+      // Upsert current keys
+      for (const key of indexedKeys) {
+        const value = json[key];
+        if (value !== undefined) {
+          db.prepare(
+            `INSERT INTO record_kv (uri, key, value) VALUES (?, ?, ?) ON CONFLICT(uri, key) DO UPDATE SET value = excluded.value`,
+          ).run(record.uri, key, String(value));
+        }
       }
     },
     deleteRecord: (uri: string) => {
       db.prepare(`DELETE FROM "record" WHERE uri = ?`).run(uri);
+      db.prepare(`DELETE FROM record_kv WHERE uri = ?`).run(uri);
     },
     insertActor: (actor: ActorTable) => {
       db.prepare(
@@ -714,6 +800,76 @@ const indexService = (db: Database): IndexService => {
     clearLabels: () => {
       db.prepare(`DELETE FROM labels`).run();
     },
+    countRecords: (
+      collection: string,
+      options?: QueryOptions,
+    ) => {
+      const collectionKeyMap = cfg?.collectionKeyMap || {};
+      const indexedKeys = new Set(collectionKeyMap[collection] || []);
+      const tableColumns = ["did", "uri", "indexedAt", "cid"];
+      let query: string;
+      let params: (string | number | boolean)[] = [];
+
+      if (indexedKeys.size > 0) {
+        // Join record and record_kv for each indexed key
+        let joinClauses = "";
+        const whereKvClauses: string[] = [];
+        const kvAliasMap: Record<string, string> = {};
+        let i = 0;
+        for (const key of indexedKeys) {
+          kvAliasMap[key] = `kv${i}`;
+          joinClauses +=
+            `\nLEFT JOIN record_kv AS kv${i} ON kv${i}.uri = record.uri AND kv${i}.key = ?`;
+          params.push(key);
+          // If filtering by this key in options.where, set value accordingly
+          let valueParam = "%";
+          if (
+            options?.where && typeof options.where === "object" &&
+            "field" in options.where && options.where.field === key &&
+            options.where.equals !== undefined
+          ) {
+            valueParam = String(options.where.equals);
+          }
+          whereKvClauses.push(`kv${i}.value = ?`);
+          params.push(valueParam);
+          i++;
+        }
+        query =
+          `SELECT COUNT(*) as count FROM record${joinClauses} WHERE record.collection = ?`;
+        params.push(collection);
+        if (whereKvClauses.length > 0) {
+          query += ` AND ` + whereKvClauses.join(" AND ");
+        }
+      } else {
+        query = `SELECT COUNT(*) as count FROM record WHERE collection = ?`;
+        params = [collection];
+      }
+
+      const normalizedWhere = Array.isArray(options?.where)
+        ? { AND: options.where }
+        : options?.where;
+      if (normalizedWhere) {
+        try {
+          const whereClause = buildWhereClause(
+            normalizedWhere,
+            tableColumns,
+            indexedKeys,
+            params,
+          );
+          if (whereClause) query += ` AND (${whereClause})`;
+        } catch (err) {
+          console.warn("Invalid where clause", err);
+        }
+      }
+      // Convert boolean params to 0/1 for SQL compatibility
+      const sqlParams = params.map((p) =>
+        typeof p === "boolean" ? (p ? 1 : 0) : p
+      );
+      console.log("SQL Params", sqlParams);
+      console.log("SQL Query", query);
+      const row = db.prepare(query).get(...sqlParams) as { count: number };
+      return row?.count ?? 0;
+    },
   };
 };
 
@@ -761,7 +917,7 @@ function composeMiddlewares({
     _connInfo: Deno.ServeHandlerInfo,
     inner: (req: Request, ctx: BffContext) => Promise<Response>,
   ) => {
-    const idxService = indexService(db);
+    const idxService = indexService(db, cfg);
 
     let agent: Agent | undefined;
     let currentUser: ActorTable | undefined;
@@ -1879,7 +2035,6 @@ export function backfillCollections(
           );
           return {
             collection,
-            repos: response.data.repos.map((repo) => repo.did),
           };
         }),
       );
