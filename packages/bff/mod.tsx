@@ -354,56 +354,58 @@ const indexService = (
       options?: QueryOptions,
     ) => {
       const collectionKeyMap = cfg?.collectionKeyMap || {};
-      const indexedKeys = new Set(collectionKeyMap[collection] || []);
+      const indexedKeys = collectionKeyMap[collection] || [];
       const tableColumns = ["did", "uri", "indexedAt", "cid"];
       let query: string;
       let params: (string | number | boolean)[] = [];
       const kvAliasMap: Record<string, string> = {};
 
-      if (indexedKeys.size > 0) {
-        // Join record and record_kv for each indexed key
-        let joinClauses = "";
-        const whereKvClauses: string[] = [];
-        let i = 0;
-        for (const key of indexedKeys) {
-          const alias = `kv${i}`;
-          kvAliasMap[key] = alias;
-          joinClauses +=
-            `\nLEFT JOIN record_kv AS ${alias} ON ${alias}.uri = record.uri AND ${alias}.key = ?`;
-          params.push(key);
-          // If filtering by this key in options.where, set value accordingly
-          let valueParam = "%";
-          if (
-            options?.where && typeof options.where === "object" &&
-            "field" in options.where && options.where.field === key &&
-            options.where.equals !== undefined
-          ) {
-            valueParam = String(options.where.equals);
-          }
-          whereKvClauses.push(`${alias}.value = ?`);
-          params.push(valueParam);
-          i++;
-        }
-        query =
-          `SELECT record.* FROM record${joinClauses} WHERE record.collection = ?`;
-        params.push(collection);
-        if (whereKvClauses.length > 0) {
-          query += ` AND ` + whereKvClauses.join(" AND ");
-        }
-      } else {
-        query = `SELECT * FROM record WHERE collection = ?`;
-        params = [collection];
+      let joinClauses = "";
+      let i = 0;
+      for (const key of indexedKeys) {
+        const alias = `kv${i}`;
+        kvAliasMap[key] = alias;
+        joinClauses +=
+          ` LEFT JOIN record_kv AS ${alias} ON ${alias}.uri = record.uri AND ${alias}.key = ?`;
+        params.push(key);
+        i++;
       }
+      query =
+        `SELECT record.* FROM record${joinClauses} WHERE record.collection = ?`;
+      params.push(collection);
 
+      // Only add kvN.value = ? for indexed keys present in the where clause
       const normalizedWhere = Array.isArray(options?.where)
         ? { AND: options.where }
         : options?.where;
+      const extraKvClauses: string[] = [];
+      if (normalizedWhere && typeof normalizedWhere === "object") {
+        for (const key of indexedKeys) {
+          let value: string | undefined;
+          if (
+            "field" in normalizedWhere && normalizedWhere.field === key &&
+            normalizedWhere.equals !== undefined
+          ) {
+            value = String(normalizedWhere.equals);
+          }
+          // TODO: handle nested/AND/OR if needed
+          if (value !== undefined) {
+            extraKvClauses.push(`${kvAliasMap[key]}.value = ?`);
+            params.push(value);
+          }
+        }
+      }
+      if (extraKvClauses.length > 0) {
+        query += ` AND ` + extraKvClauses.join(" AND ");
+      }
+
+      // Now add the rest of the where clause (for non-indexed keys)
       if (normalizedWhere) {
         try {
           const whereClause = buildWhereClause(
             normalizedWhere,
             tableColumns,
-            indexedKeys,
+            new Set(indexedKeys),
             params,
             kvAliasMap,
           );
@@ -2041,6 +2043,7 @@ export function backfillCollections(
           );
           return {
             collection,
+            repos: response.data.repos.map((repo) => repo.did),
           };
         }),
       );
