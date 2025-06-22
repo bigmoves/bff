@@ -2,7 +2,7 @@
  * GENERATED CODE - DO NOT MODIFY
  */
 import { IncomingMessage } from "node:http";
-import { ErrorFrame, HandlerAuth } from "npm:@atproto/xrpc-server@0.7.18";
+import { ErrorFrame, HandlerAuth } from "npm:@atproto/xrpc-server@0.7.19";
 import { validate as _validate } from "../../../../lexicons.ts";
 import { type $Typed, is$typed as _is$typed } from "../../../../util.ts";
 import type * as ComAtprotoLabelDefs from "./defs.ts";

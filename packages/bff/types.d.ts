@@ -39,6 +39,12 @@ export type LabelTable = {
   exp?: string | null;
 };
 
+export type FacetIndexTable = {
+  uri: string;
+  type: "mention" | "tag";
+  value: string;
+};
+
 export type RecordMeta = {
   indexedAt: string;
   cid: string;
@@ -178,6 +184,10 @@ export type Where = WhereCondition | NestedWhere;
 export type QueryOptions = {
   orderBy?: OrderByOption[];
   where?: Where | Where[];
+  facet?: {
+    type: string;
+    value: string;
+  };
   limit?: number;
   cursor?: string;
 };

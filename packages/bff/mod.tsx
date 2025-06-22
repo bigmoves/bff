@@ -1,3 +1,8 @@
+import {
+  isMention,
+  isTag,
+  type Main as Facet,
+} from "$lexicon/types/app/bsky/richtext/facet.ts";
 import type { Label } from "$lexicon/types/com/atproto/label/defs.ts";
 import { Agent } from "@atproto/api";
 import { TID } from "@atproto/common";
@@ -35,6 +40,7 @@ import type {
   BffMiddleware,
   BffOptions,
   Database,
+  FacetIndexTable,
   HttpMethod,
   IndexService,
   LabelerPolicies,
@@ -203,6 +209,7 @@ function createDb(cfg: BffConfig) {
 
   db.exec(`
     PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
 
     CREATE TABLE IF NOT EXISTS "auth_session" (
       "key" TEXT PRIMARY KEY NOT NULL,
@@ -219,6 +226,8 @@ function createDb(cfg: BffConfig) {
       "handle" TEXT,
       "indexedAt" TEXT NOT NULL
     );
+
+    CREATE INDEX IF NOT EXISTS actor_handle_idx ON actor(handle);
 
     CREATE TABLE IF NOT EXISTS "record" (
       "uri" TEXT PRIMARY KEY NOT NULL,
@@ -266,6 +275,16 @@ function createDb(cfg: BffConfig) {
       exp DATETIME,
       PRIMARY KEY (src, uri, cid, val)
     );
+
+    CREATE TABLE IF NOT EXISTS "facet_index" (
+      "uri" TEXT NOT NULL,         -- References record.uri
+      "type" TEXT NOT NULL,        -- e.g. 'mention', 'tag'
+      "value" TEXT NOT NULL,       -- e.g. did for mention, tag string for hashtag
+      PRIMARY KEY ("uri", "type", "value"),
+      FOREIGN KEY ("uri") REFERENCES record("uri") ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS facet_index_type_value ON facet_index (type, value);
   `);
 
   // @TODO: Move this to the actor create table statement once there's a built
@@ -359,7 +378,7 @@ const indexService = (
       const indexedKeys = collectionKeyMap[collection] || [];
       const tableColumns = ["did", "uri", "indexedAt", "cid"];
       let query: string;
-      const params: (string | number | boolean)[] = [];
+      let params: (string | number | boolean)[] = [];
       const kvAliasMap: Record<string, string> = {};
 
       let joinClauses = "";
@@ -372,9 +391,21 @@ const indexService = (
         params.push(key);
         i++;
       }
+
+      // Facet join
+      if (options?.facet) {
+        joinClauses += ` JOIN facet_index ON record.uri = facet_index.uri`;
+      }
+
       query =
         `SELECT record.* FROM record${joinClauses} WHERE record.collection = ?`;
       params.push(collection);
+
+      // Facet filter
+      if (options?.facet) {
+        query += ` AND facet_index.type = ? AND facet_index.value = ?`;
+        params.push(options.facet.type, options.facet.value);
+      }
 
       // Only add kvN.value = ? for indexed keys present in the where clause
       const normalizedWhere = Array.isArray(options?.where)
@@ -633,16 +664,33 @@ const indexService = (
         record.json,
         record.indexedAt,
       );
+
+      const json = JSON.parse(record.json);
+
       // Sync record_kv
       const collectionKeyMap = cfg?.collectionKeyMap || {};
       const indexedKeys = collectionKeyMap[record.collection] || [];
-      const json = JSON.parse(record.json);
       for (const key of indexedKeys) {
         const value = json[key];
         if (value !== undefined) {
           db.prepare(
             `INSERT INTO record_kv (uri, key, value) VALUES (?, ?, ?) ON CONFLICT(uri, key) DO UPDATE SET value = excluded.value`,
           ).run(record.uri, key, String(value));
+        }
+      }
+      // Facet indexing
+      if (Array.isArray(json.facets)) {
+        // Remove old facets for this uri
+        db.prepare(`DELETE FROM facet_index WHERE uri = ?`).run(record.uri);
+        const facetEntries = indexFacets(record.uri, json.facets);
+        for (const entry of facetEntries) {
+          db.prepare(
+            `INSERT INTO facet_index (uri, type, value) VALUES (?, ?, ?)`,
+          ).run(
+            entry.uri,
+            entry.type,
+            entry.value,
+          );
         }
       }
     },
@@ -656,10 +704,12 @@ const indexService = (
         record.indexedAt,
         record.uri,
       );
+
+      const json = JSON.parse(record.json);
+
       // Sync record_kv
       const collectionKeyMap = cfg?.collectionKeyMap || {};
       const indexedKeys = collectionKeyMap[record.collection] || [];
-      const json = JSON.parse(record.json);
       // Remove keys not present anymore
       const existingKvs = db.prepare(`SELECT key FROM record_kv WHERE uri = ?`)
         .all(record.uri) as { key: string }[];
@@ -678,6 +728,21 @@ const indexService = (
           db.prepare(
             `INSERT INTO record_kv (uri, key, value) VALUES (?, ?, ?) ON CONFLICT(uri, key) DO UPDATE SET value = excluded.value`,
           ).run(record.uri, key, String(value));
+        }
+      }
+      // Facet indexing
+      if (Array.isArray(json.facets)) {
+        // Remove old facets for this uri
+        db.prepare(`DELETE FROM facet_index WHERE uri = ?`).run(record.uri);
+        const facetEntries = indexFacets(record.uri, json.facets);
+        for (const entry of facetEntries) {
+          db.prepare(
+            `INSERT INTO facet_index (uri, type, value) VALUES (?, ?, ?)`,
+          ).run(
+            entry.uri,
+            entry.type,
+            entry.value,
+          );
         }
       }
     },
@@ -719,9 +784,13 @@ const indexService = (
       const pattern = `%${did}%`;
       const result = db
         .prepare(`
-          SELECT uri FROM record
+          SELECT uri
+          FROM record
           WHERE json LIKE ? AND did != ?
-          ORDER BY json_extract(json, '$.createdAt') DESC
+          ORDER BY COALESCE(
+            json_extract(json, '$.updatedAt'),
+            json_extract(json, '$.createdAt')
+          ) DESC
         `)
         .all(pattern, did) as { uri: string }[];
       return result.map((r) => r.uri);
@@ -911,6 +980,27 @@ function createBffHandler({
   return function handler(req: Request, connInfo: Deno.ServeHandlerInfo) {
     return withMiddlewares(req, connInfo, inner);
   };
+}
+
+function indexFacets(uri: string, facets: Facet[]): FacetIndexTable[] {
+  return facets.flatMap((facet) => facet.features)
+    .flatMap((feature) => {
+      if (isMention(feature)) {
+        return {
+          uri,
+          type: "mention",
+          value: feature.did,
+        };
+      } else if (isTag(feature)) {
+        return {
+          uri,
+          type: "tag",
+          value: feature.tag.toLowerCase(),
+        };
+      }
+      return null;
+    })
+    .filter((entry): entry is FacetIndexTable => entry !== null);
 }
 
 function composeMiddlewares({
