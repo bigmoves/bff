@@ -24,6 +24,7 @@ import * as colors from "@std/fmt/colors";
 import { deleteCookie, getCookies, setCookie } from "@std/http";
 import { serveDir } from "@std/http/file-server";
 import { join } from "@std/path/join";
+import jwt from "jsonwebtoken";
 import { Buffer } from "node:buffer";
 import { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, VNode } from "preact";
@@ -193,6 +194,7 @@ function configureBff(cfg: BffOptions): BffConfig {
     privateKey1: Deno.env.get("BFF_PRIVATE_KEY_1"),
     privateKey2: Deno.env.get("BFF_PRIVATE_KEY_2"),
     privateKey3: Deno.env.get("BFF_PRIVATE_KEY_3"),
+    jwtSecret: Deno.env.get("BFF_JWT_SECRET"),
     plcDirectoryUrl: Deno.env.get("BFF_PLC_DIRECTORY_URL") ??
       "https://plc.directory",
     jetstreamUrl: cfg.jetstreamUrl ?? Deno.env.get("BFF_JETSTREAM_URL"),
@@ -1042,6 +1044,15 @@ function composeMiddlewares({
       }
     }
 
+    if (!agent) {
+      // Try to parse DID from JWT in Authorization header
+      sessionDid = parseJwtFromAuthHeader(req, cfg);
+      if (sessionDid) {
+        const oauthSession = await oauthClient.restore(sessionDid);
+        agent = new Agent(oauthSession);
+      }
+    }
+
     if (agent && sessionDid) {
       const actor = idxService.getActor(sessionDid);
       currentUser = actor;
@@ -1077,6 +1088,7 @@ function composeMiddlewares({
       didResolver,
       render: () => new Response(),
       html: html(),
+      json: json(),
       redirect: redirect(req.headers),
       cfg,
       next: async () => new Response(),
@@ -1123,6 +1135,36 @@ function composeMiddlewares({
       return runNext();
     };
   }
+}
+
+function parseJwtFromAuthHeader(
+  req: Request,
+  cfg: BffConfig,
+): string | undefined {
+  const authHeader = req.headers.get("authorization");
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : null;
+
+  if (!bearerToken) {
+    return undefined;
+  }
+
+  let did: string | undefined;
+
+  if (!cfg.jwtSecret) {
+    console.error("BFF_JWT_SECRET secret is not configured");
+    return undefined;
+  }
+
+  try {
+    const decoded = jwt.verify(bearerToken, cfg.jwtSecret);
+    did = decoded.did as string;
+  } catch (_err) {
+    console.error("JWT verification failed:", _err);
+    return undefined;
+  }
+  return did;
 }
 
 async function handler(req: Request, ctx: BffContext) {
@@ -1646,6 +1688,19 @@ function redirect(headers: Headers) {
   };
 }
 
+function json() {
+  return (
+    data: unknown,
+    status = 200,
+    headers?: Record<string, string>,
+  ): Response => {
+    return new Response(JSON.stringify(data), {
+      headers: { "Content-Type": "application/json", ...headers },
+      status,
+    });
+  };
+}
+
 function Root(props: Readonly<RootProps>) {
   return (
     <html lang="en">
@@ -1664,6 +1719,7 @@ export const OAUTH_ROUTES = {
   loginPage: "/login",
   login: "/oauth/login",
   callback: "/oauth/callback",
+  tokenCallback: "/oauth/token-callback",
   signup: "/signup",
   logout: "/logout",
   clientMetadata: "/oauth-client-metadata.json",
@@ -1678,16 +1734,37 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
     const LoginComponent = opts?.LoginComponent ?? Login;
 
     if (pathname === OAUTH_ROUTES.login) {
-      const formData = await req.formData();
-      const handle = formData.get("handle") as string;
+      let handle: string | undefined;
+      const clientType = searchParams.get("client");
 
-      if (typeof handle !== "string") {
-        return ctx.html(<LoginComponent error="invalid handle" />);
+      if (clientType === "native") {
+        handle = searchParams.get("handle") ?? undefined;
+
+        if (typeof handle !== "string") {
+          return ctx.json(
+            { error: "invalid handle" },
+            400,
+          );
+        }
+      } else if (req.method === "POST") {
+        const formData = await req.formData();
+        handle = formData.get("handle") as string ?? undefined;
+
+        if (typeof handle !== "string") {
+          return ctx.html(<LoginComponent error="invalid handle" />);
+        }
+      }
+
+      if (!handle) {
+        throw new Error("Handle is required for login");
       }
 
       try {
         const url = await ctx.oauthClient.authorize(handle, {
           signal: req.signal,
+          state: clientType === "native"
+            ? OAUTH_ROUTES.tokenCallback
+            : undefined,
         });
         return ctx.redirect(url.toString());
       } catch (err) {
@@ -1695,6 +1772,11 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         const error = err instanceof OAuthResolverError
           ? err.message
           : "couldn't initiate login";
+
+        if (clientType === "native") {
+          return ctx.json({ error }, 400);
+        }
+
         return ctx.html(<LoginComponent error={error} />);
       }
     }
@@ -1714,7 +1796,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
           });
         }
 
-        const { session } = await ctx.oauthClient.callback(searchParams);
+        const { session, state } = await ctx.oauthClient.callback(searchParams);
 
         const agent = new Agent(session);
 
@@ -1739,6 +1821,22 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         };
 
         ctx.indexService.insertActor(actor);
+
+        if (state) {
+          if (state !== OAUTH_ROUTES.tokenCallback) {
+            throw new Error("Unexpected state in OAuth callback");
+          }
+
+          if (!ctx.cfg.jwtSecret) {
+            throw new Error("BFF_JWT_SECRET secret is not configured");
+          }
+
+          const token = jwt.sign({ did: session.did }, ctx.cfg.jwtSecret, {
+            expiresIn: "48h",
+          });
+
+          return ctx.redirect(state + `?token=${encodeURIComponent(token)}`);
+        }
 
         const redirectPath = await opts?.onSignedIn?.({ actor, ctx });
 

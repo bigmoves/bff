@@ -134,6 +134,8 @@ export type EnvConfig = {
   plcDirectoryUrl?: string;
   /** The URL of the Jetstream server */
   jetstreamUrl?: string;
+  /** JWT secret */
+  jwtSecret?: string;
 };
 
 export type BffConfig = BffOptions & EnvConfig & {
@@ -283,6 +285,11 @@ export type BffContext<State = Record<string, unknown>> = {
     headers?: Record<string, string>,
   ) => Response;
   html: (vnode: VNode, headers?: Record<string, string>) => Response;
+  json: (
+    data: unknown,
+    status?: number,
+    headers?: Record<string, string>,
+  ) => Response;
   redirect: (url: string) => Response;
   rateLimit: (options: {
     namespace: string;

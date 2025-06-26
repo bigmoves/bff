@@ -1,6 +1,6 @@
 {
   "name": "@bigmoves/bff",
-  "version": "0.3.0-beta.41",
+  "version": "0.3.0-beta.42",
   "license": "MIT",
   "tasks": {
     "tailwind": "deno run -A --node-modules-dir npm:@tailwindcss/cli -i ./styles/input.css -o ./styles/output.css -m",
@@ -30,6 +30,7 @@
     "@std/testing": "jsr:@std/testing@^1.0.11",
     "@tailwindcss/cli": "npm:@tailwindcss/cli@^4.1.3",
     "clsx": "npm:clsx@^2.1.1",
+    "jsonwebtoken": "npm:jsonwebtoken@^9.0.2",
     "multiformats": "npm:multiformats@^13.3.2",
     "preact": "npm:preact@^10.26.5",
     "preact-render-to-string": "npm:preact-render-to-string@^6.5.13",
