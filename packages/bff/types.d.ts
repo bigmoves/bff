@@ -99,6 +99,8 @@ export type BffOptions = {
   buildDir?: string;
   /** Collection key map. Define which key/value pairs to index. */
   collectionKeyMap?: Record<string, string[]>;
+  /** Token callback e.g. passing jwt along to mobile app, only use server-side */
+  tokenCallbackUrl?: string;
   /** The root element of the app */
   rootElement?: RootElement;
   /** Called when the server starts listening. */

@@ -1719,7 +1719,6 @@ export const OAUTH_ROUTES = {
   loginPage: "/login",
   login: "/oauth/login",
   callback: "/oauth/callback",
-  tokenCallback: "/oauth/token-callback",
   signup: "/signup",
   logout: "/logout",
   clientMetadata: "/oauth-client-metadata.json",
@@ -1762,9 +1761,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       try {
         const url = await ctx.oauthClient.authorize(handle, {
           signal: req.signal,
-          state: clientType === "native"
-            ? OAUTH_ROUTES.tokenCallback
-            : undefined,
+          state: clientType ?? undefined,
         });
         return ctx.redirect(url.toString());
       } catch (err) {
@@ -1823,7 +1820,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         ctx.indexService.insertActor(actor);
 
         if (state) {
-          if (state !== OAUTH_ROUTES.tokenCallback) {
+          if (state !== "native") {
             throw new Error("Unexpected state in OAuth callback");
           }
 
@@ -1831,11 +1828,18 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
             throw new Error("BFF_JWT_SECRET secret is not configured");
           }
 
+          if (!ctx.cfg.tokenCallbackUrl) {
+            throw new Error("tokenCallbackUrl is not configured");
+          }
+
           const token = jwt.sign({ did: session.did }, ctx.cfg.jwtSecret, {
+            // @TODO: come back to this
             expiresIn: "48h",
           });
 
-          return ctx.redirect(state + `?token=${encodeURIComponent(token)}`);
+          return ctx.redirect(
+            ctx.cfg.tokenCallbackUrl + `?token=${encodeURIComponent(token)}`,
+          );
         }
 
         const redirectPath = await opts?.onSignedIn?.({ actor, ctx });
