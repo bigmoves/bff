@@ -955,6 +955,13 @@ const indexService = (
       );
       return row?.count ?? 0;
     },
+    getSession: (key: string) => {
+      const result = db
+        .prepare(`SELECT session FROM auth_session WHERE key = ?`)
+        .get(key) as { session: string } | undefined;
+      if (!result) return;
+      return JSON.parse(result.session) as NodeSavedSession;
+    },
   };
 };
 

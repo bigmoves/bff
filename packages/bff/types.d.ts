@@ -6,7 +6,10 @@ import type {
 import type { Agent } from "@atproto/api";
 import type { DidResolver } from "@atproto/identity";
 import type { BlobRef, Lexicons } from "@atproto/lexicon";
-import type { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
+import type {
+  AtprotoOAuthClient,
+  NodeSavedSession,
+} from "@bigmoves/atproto-oauth-client";
 import type { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, FunctionComponent, VNode } from "preact";
 
@@ -237,6 +240,7 @@ export type IndexService = {
     },
   ) => Label[];
   clearLabels: () => void;
+  getSession: (key: string) => NodeSavedSession | undefined;
 };
 
 export type BffContext<State = Record<string, unknown>> = {
