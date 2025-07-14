@@ -235,7 +235,9 @@ function handleWebSocketUpgrade(
     console.log(`WebSocket connected for DID: ${did}`);
 
     // Only notify client to refresh notifications
+    console.log("About to send refresh-notifications");
     socket.send(JSON.stringify({ type: "refresh-notifications" }));
+    console.log("Sent refresh-notifications");
   };
 
   socket.onclose = () => {
