@@ -226,20 +226,32 @@ function handleWebSocketUpgrade(
     // Extract DID from JWT in Authorization header
     const did = parseJwtFromAuthHeader(req, bffConfig);
     if (!did) {
+      console.warn("WebSocket connection rejected: missing or invalid DID");
       socket.close();
       return;
     }
     if (!wsClients.has(did)) wsClients.set(did, new Set());
     wsClients.get(did)!.add(socket);
+    console.log(`WebSocket connected for DID: ${did}`);
 
     // Only notify client to refresh notifications
     socket.send(JSON.stringify({ type: "refresh-notifications" }));
   };
 
   socket.onclose = () => {
+    let disconnectedDid: string | undefined;
     for (const [did, sockets] of wsClients.entries()) {
-      sockets.delete(socket);
-      if (sockets.size === 0) wsClients.delete(did);
+      if (sockets.has(socket)) {
+        sockets.delete(socket);
+        disconnectedDid = did;
+        if (sockets.size === 0) wsClients.delete(did);
+        break;
+      }
+    }
+    if (disconnectedDid) {
+      console.log(`WebSocket disconnected for DID: ${disconnectedDid}`);
+    } else {
+      console.log("WebSocket disconnected for unknown DID");
     }
   };
 
