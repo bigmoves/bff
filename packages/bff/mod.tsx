@@ -165,7 +165,11 @@ export async function bff(opts: BffOptions) {
         status: 500,
       });
     },
-  }, handler);
+  }, (req, info) => {
+    const wsResponse = handleWebSocketUpgrade(req, bffConfig);
+    if (wsResponse) return wsResponse;
+    return handler(req, info);
+  });
 
   Deno.addSignalListener("SIGINT", () => {
     console.log("Shutting down server...");
@@ -204,6 +208,42 @@ function configureBff(cfg: BffOptions): BffConfig {
     rootElement: cfg.rootElement ?? Root,
     buildDir: cfg.buildDir ?? "build",
   };
+}
+
+const wsClients = new Map<string, Set<WebSocket>>();
+
+function handleWebSocketUpgrade(
+  req: Request,
+  bffConfig: BffConfig,
+): Response | undefined {
+  const { pathname } = new URL(req.url);
+  if (pathname !== "/ws" || req.headers.get("upgrade") !== "websocket") {
+    return undefined;
+  }
+  const { socket, response } = Deno.upgradeWebSocket(req);
+
+  socket.onopen = () => {
+    // Extract DID from JWT in Authorization header
+    const did = parseJwtFromAuthHeader(req, bffConfig);
+    if (!did) {
+      socket.close();
+      return;
+    }
+    if (!wsClients.has(did)) wsClients.set(did, new Set());
+    wsClients.get(did)!.add(socket);
+
+    // Only notify client to refresh notifications
+    socket.send(JSON.stringify({ type: "refresh-notifications" }));
+  };
+
+  socket.onclose = () => {
+    for (const [did, sockets] of wsClients.entries()) {
+      sockets.delete(socket);
+      if (sockets.size === 0) wsClients.delete(did);
+    }
+  };
+
+  return response;
 }
 
 function createDb(cfg: BffConfig) {
@@ -1188,6 +1228,24 @@ async function handler(req: Request, ctx: BffContext) {
   });
 }
 
+function pushMentionNotifications(
+  did: string,
+  record: unknown,
+) {
+  // Find all DIDs mentioned in the record JSON
+  const jsonStr = stringifyLex(record);
+  const didRegex = /did:[a-z0-9]+:[a-zA-Z0-9._-]+/g;
+  const mentionedDids = Array.from(new Set(jsonStr.match(didRegex) || []));
+  for (const mentionedDid of mentionedDids) {
+    if (mentionedDid === did) continue;
+    if (wsClients.has(mentionedDid)) {
+      for (const ws of wsClients.get(mentionedDid) ?? []) {
+        ws.send(JSON.stringify({ type: "refresh-notifications" }));
+      }
+    }
+  }
+}
+
 function createSubscription(
   indexService: IndexService,
   cfg: BffConfig,
@@ -1240,9 +1298,14 @@ function createSubscription(
           console.error(`Failed to insert record for ${uri}:`, err);
           return;
         }
+        pushMentionNotifications(did, record);
       } else if (operation === "delete") {
         try {
+          const recordToDelete = indexService.getRecord(uri);
           indexService.deleteRecord(uri);
+          if (recordToDelete) {
+            pushMentionNotifications(did, recordToDelete);
+          }
         } catch (err) {
           console.error(`Failed to delete record for ${uri}:`, err);
           return;
@@ -2513,13 +2576,13 @@ function updateSeen(
   currentUser: ActorTable | undefined,
   indexService: IndexService,
 ) {
-  return () => {
+  return (seenAt: string) => {
     if (!currentUser) {
       return;
     }
     indexService.updateActor(
       currentUser.did,
-      new Date().toISOString(),
+      seenAt,
     );
   };
 }

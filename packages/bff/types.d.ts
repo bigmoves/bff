@@ -306,7 +306,7 @@ export type BffContext<State = Record<string, unknown>> = {
   }) => boolean;
   requireAuth: () => ActorTable; // Returns the currentUser if authenticated, throws otherwise
   getNotifications: <T extends Record<string, unknown>>() => T[];
-  updateSeen: () => void;
+  updateSeen: (seenAt: string) => void;
   getLabelerDefinitions: () => Promise<Record<string, LabelerPolicies>>;
   fileFingerprints: Map<string, string>;
 };
