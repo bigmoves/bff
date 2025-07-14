@@ -236,8 +236,12 @@ function handleWebSocketUpgrade(
 
     // Only notify client to refresh notifications
     console.log("About to send refresh-notifications");
-    socket.send(JSON.stringify({ type: "refresh-notifications" }));
-    console.log("Sent refresh-notifications");
+    try {
+      socket.send(JSON.stringify({ type: "refresh-notifications" }));
+      console.log("Sent refresh-notifications");
+    } catch (err) {
+      console.error("Error sending refresh-notifications:", err);
+    }
   };
 
   socket.onclose = () => {
