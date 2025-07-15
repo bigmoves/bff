@@ -166,8 +166,10 @@ export async function bff(opts: BffOptions) {
       });
     },
   }, (req, info) => {
-    const wsResponse = handleWebSocketUpgrade(req, bffConfig);
-    if (wsResponse) return wsResponse;
+    if (bffConfig.notificationsOnly) {
+      const wsResponse = handleWebSocketUpgrade(req, bffConfig);
+      if (wsResponse) return wsResponse;
+    }
     return handler(req, info);
   });
 
@@ -191,8 +193,6 @@ function configureBff(cfg: BffOptions): BffConfig {
     litefsDir: Deno.env.get("BFF_LITEFS_DIR") ?? "/litefs",
     databaseUrl: cfg.databaseUrl ?? Deno.env.get("BFF_DATABASE_URL") ??
       ":memory:",
-    queueDatabaseUrl: Deno.env.get("BFF_QUEUE_DATABASE_URL") ??
-      "file::memory:?cache=shared",
     cookieSecret: Deno.env.get("BFF_COOKIE_SECRET") ??
       "000000000000000000000000000000000",
     privateKey1: Deno.env.get("BFF_PRIVATE_KEY_1"),
@@ -1246,7 +1246,7 @@ async function handler(req: Request, ctx: BffContext) {
   });
 }
 
-function pushMentionNotifications(
+function notifyMentionedDids(
   did: string,
   record: unknown,
 ) {
@@ -1260,6 +1260,14 @@ function pushMentionNotifications(
       for (const ws of wsClients.get(mentionedDid) ?? []) {
         ws.send(JSON.stringify({ type: "refresh-notifications" }));
       }
+    }
+  }
+}
+
+function notifyAllConnectedClients() {
+  for (const sockets of wsClients.values()) {
+    for (const ws of sockets) {
+      ws.send(JSON.stringify({ type: "refresh-notifications" }));
     }
   }
 }
@@ -1292,6 +1300,25 @@ function createSubscription(
 
       console.log(`Received ${operation} event for ${uri}`);
 
+      // Notifications-only mode: skip DB ops, just push notifications
+      if (cfg.notificationsOnly) {
+        if (operation === "create" || operation === "update") {
+          try {
+            cfg.lexicons.assertValidRecord(
+              collection,
+              hydrateBlobRefs(record),
+            );
+          } catch (err) {
+            console.error(`Invalid record for ${uri}:`, err);
+            return;
+          }
+          notifyMentionedDids(did, record);
+        } else if (operation === "delete") {
+          notifyAllConnectedClients();
+        }
+        return;
+      }
+
       if (operation === "create" || operation === "update") {
         try {
           cfg.lexicons.assertValidRecord(
@@ -1316,14 +1343,9 @@ function createSubscription(
           console.error(`Failed to insert record for ${uri}:`, err);
           return;
         }
-        pushMentionNotifications(did, record);
       } else if (operation === "delete") {
         try {
-          const recordToDelete = indexService.getRecord(uri);
           indexService.deleteRecord(uri);
-          if (recordToDelete) {
-            pushMentionNotifications(did, recordToDelete);
-          }
         } catch (err) {
           console.error(`Failed to delete record for ${uri}:`, err);
           return;

@@ -104,6 +104,8 @@ export type BffOptions = {
   collectionKeyMap?: Record<string, string[]>;
   /** Token callback e.g. passing jwt along to mobile app, only use server-side */
   tokenCallbackUrl?: string;
+  /** Doesn't require DB, for running a standalone websocket notification service */
+  notificationsOnly?: boolean;
   /** The root element of the app */
   rootElement?: RootElement;
   /** Called when the server starts listening. */
@@ -150,7 +152,6 @@ export type BffConfig = BffOptions & EnvConfig & {
    * @default ":memory:"
    */
   databaseUrl: string;
-  queueDatabaseUrl: string;
   oauthScope: string;
   rootElement: RootElement;
   buildDir: string;
