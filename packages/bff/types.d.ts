@@ -9,6 +9,7 @@ import type { BlobRef, Lexicons } from "@atproto/lexicon";
 import type {
   AtprotoOAuthClient,
   NodeSavedSession,
+  NodeSavedState,
 } from "@bigmoves/atproto-oauth-client";
 import type { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, FunctionComponent, VNode } from "preact";
@@ -210,6 +211,8 @@ export type RecordKvTable = {
   indexedAt: string;
 };
 
+export type ApplicationType = "web" | "native";
+
 export type IndexService = {
   getRecords: <T extends Record<string, unknown>>(
     collection: string,
@@ -241,7 +244,11 @@ export type IndexService = {
     },
   ) => Label[];
   clearLabels: () => void;
-  getSession: (key: string) => NodeSavedSession | undefined;
+  getSession: (
+    key: string,
+    applicationType: ApplicationType,
+  ) => NodeSavedSession | undefined;
+  getState: (key: string) => NodeSavedState | undefined;
 };
 
 export type BffContext<State = Record<string, unknown>> = {
@@ -284,6 +291,7 @@ export type BffContext<State = Record<string, unknown>> = {
   uploadBlob: (file: File) => Promise<BlobRef>;
   indexService: IndexService;
   oauthClient: AtprotoOAuthClient;
+  oauthClientNative: AtprotoOAuthClient;
   currentUser?: ActorTable;
   cfg: BffConfig;
   next: () => Promise<Response>;

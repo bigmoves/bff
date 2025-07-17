@@ -36,6 +36,7 @@ import Labeler from "./labeler.ts";
 import { CSS } from "./styles.ts";
 import type {
   ActorTable,
+  ApplicationType,
   BffConfig,
   BffContext,
   BffMiddleware,
@@ -89,9 +90,11 @@ export async function bff(opts: BffOptions) {
   const db = createDb(bffConfig);
   const idxService = indexService(db, bffConfig);
   const oauthClient = await createOauthClient(db, bffConfig);
+  const oauthClientNative = await createOauthClient(db, bffConfig, "native");
   const handler = createBffHandler({
     db,
     oauthClient,
+    oauthClientNative,
     cfg: bffConfig,
     didResolver,
     fileFingerprints,
@@ -277,6 +280,16 @@ function createDb(cfg: BffConfig) {
     );
 
     CREATE TABLE IF NOT EXISTS "auth_state" (
+      "key" TEXT PRIMARY KEY NOT NULL,
+      "state" TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS "auth_session_native" (
+      "key" TEXT PRIMARY KEY NOT NULL,
+      "session" TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS "auth_state_native" (
       "key" TEXT PRIMARY KEY NOT NULL,
       "state" TEXT NOT NULL
     );
@@ -1013,12 +1026,43 @@ const indexService = (
       );
       return row?.count ?? 0;
     },
-    getSession: (key: string) => {
+    getSession: (key: string, applicationType: "web" | "native" = "web") => {
+      const tableName = applicationType === "web"
+        ? "auth_session"
+        : "auth_session_native";
       const result = db
-        .prepare(`SELECT session FROM auth_session WHERE key = ?`)
+        .prepare(`SELECT session FROM ${tableName} WHERE key = ?`)
         .get(key) as { session: string } | undefined;
-      if (!result) return;
-      return JSON.parse(result.session) as NodeSavedSession;
+      if (!result?.session) return undefined;
+      try {
+        return JSON.parse(result.session) as NodeSavedSession;
+      } catch {
+        return undefined;
+      }
+    },
+    getState: (key: string): NodeSavedState | undefined => {
+      // Try web state table first
+      let result = db.prepare(`SELECT state FROM auth_state WHERE key = ?`).get(
+        key,
+      ) as { state?: string } | undefined;
+      if (result?.state) {
+        try {
+          return JSON.parse(result.state) as NodeSavedState;
+        } catch {
+          return undefined;
+        }
+      }
+      // Try native state table if not found in web
+      result = db.prepare(`SELECT state FROM auth_state_native WHERE key = ?`)
+        .get(key) as { state?: string } | undefined;
+      if (result?.state) {
+        try {
+          return JSON.parse(result.state) as NodeSavedState;
+        } catch {
+          return undefined;
+        }
+      }
+      return undefined;
     },
   };
 };
@@ -1026,12 +1070,14 @@ const indexService = (
 function createBffHandler({
   db,
   oauthClient,
+  oauthClientNative,
   cfg,
   didResolver,
   fileFingerprints,
 }: {
   db: Database;
   oauthClient: AtprotoOAuthClient;
+  oauthClientNative: AtprotoOAuthClient;
   cfg: BffConfig;
   didResolver: DidResolver;
   fileFingerprints: Map<string, string>;
@@ -1040,6 +1086,7 @@ function createBffHandler({
   const withMiddlewares = composeMiddlewares({
     db,
     oauthClient,
+    oauthClientNative,
     cfg,
     didResolver,
     fileFingerprints,
@@ -1073,12 +1120,14 @@ function indexFacets(uri: string, facets: Facet[]): FacetIndexTable[] {
 function composeMiddlewares({
   db,
   oauthClient,
+  oauthClientNative,
   cfg,
   didResolver,
   fileFingerprints,
 }: {
   db: Database;
   oauthClient: AtprotoOAuthClient;
+  oauthClientNative: AtprotoOAuthClient;
   cfg: BffConfig;
   didResolver: DidResolver;
   fileFingerprints: Map<string, string>;
@@ -1113,7 +1162,7 @@ function composeMiddlewares({
       // Try to parse DID from JWT in Authorization header
       sessionDid = parseJwtFromAuthHeader(req, cfg);
       if (sessionDid) {
-        const oauthSession = await oauthClient.restore(sessionDid, false);
+        const oauthSession = await oauthClientNative.restore(sessionDid, false);
         agent = new Agent(oauthSession);
       }
     }
@@ -1139,6 +1188,7 @@ function composeMiddlewares({
     const ctx: BffContext = {
       state: {},
       oauthClient,
+      oauthClientNative,
       indexService: idxService,
       currentUser,
       agent,
@@ -1357,7 +1407,11 @@ function createSubscription(
   return jetstream;
 }
 
-async function createOauthClient(db: Database, cfg: BffConfig) {
+async function createOauthClient(
+  db: Database,
+  cfg: BffConfig,
+  applicationType: ApplicationType = "web",
+) {
   const publicUrl = cfg.publicUrl;
   const url = publicUrl || `http://127.0.0.1:${cfg.port}`;
   const enc = encodeURIComponent;
@@ -1391,8 +1445,8 @@ async function createOauthClient(db: Database, cfg: BffConfig) {
       dpop_bound_access_tokens: true,
       ...hasPrivateKeys && { token_endpoint_auth_signing_alg: "ES256" },
     },
-    stateStore: createStateStore(db),
-    sessionStore: createSessionStore(db),
+    stateStore: createStateStore(db, applicationType),
+    sessionStore: createSessionStore(db, applicationType),
     ...hasPrivateKeys && {
       // @TODO: fix this type assertion
       keyset: (await Promise.all([
@@ -1406,11 +1460,17 @@ async function createOauthClient(db: Database, cfg: BffConfig) {
   });
 }
 
-function createStateStore(db: Database): NodeSavedStateStore {
+function createStateStore(
+  db: Database,
+  applicationType: ApplicationType,
+): NodeSavedStateStore {
+  const tableName = applicationType === "web"
+    ? "auth_state"
+    : "auth_state_native";
   return {
     get(key: string): NodeSavedState | undefined {
       const result = db
-        .prepare(`SELECT state FROM auth_state WHERE key = ?`)
+        .prepare(`SELECT state FROM ${tableName} WHERE key = ?`)
         .get(key) as { state: string };
       if (!result.state) return;
       return JSON.parse(result.state) as NodeSavedState;
@@ -1418,12 +1478,12 @@ function createStateStore(db: Database): NodeSavedStateStore {
     set(key: string, val: NodeSavedState) {
       const state = JSON.stringify(val);
       db.prepare(
-        `INSERT INTO auth_state (key, state) VALUES (?, ?)
+        `INSERT INTO ${tableName} (key, state) VALUES (?, ?)
          ON CONFLICT (key) DO UPDATE SET state = ?`,
       ).run(key, state, state);
     },
     del(key: string) {
-      db.prepare(`DELETE FROM auth_state WHERE key = ?`).run(key);
+      db.prepare(`DELETE FROM ${tableName} WHERE key = ?`).run(key);
     },
   };
 }
@@ -1475,11 +1535,17 @@ function createLock(db: Database, cfg: BffConfig) {
   };
 }
 
-function createSessionStore(db: Database): NodeSavedSessionStore {
+function createSessionStore(
+  db: Database,
+  applicationType: ApplicationType = "web",
+): NodeSavedSessionStore {
+  const tableName = applicationType === "web"
+    ? "auth_session"
+    : "auth_session_native";
   return {
     get(key: string): NodeSavedSession | undefined {
       const result = db
-        .prepare(`SELECT session FROM auth_session WHERE key = ?`)
+        .prepare(`SELECT session FROM ${tableName} WHERE key = ?`)
         .get(key) as { session: string } | undefined;
       if (!result) return;
       return JSON.parse(result.session) as NodeSavedSession;
@@ -1487,12 +1553,12 @@ function createSessionStore(db: Database): NodeSavedSessionStore {
     set(key: string, val: NodeSavedSession) {
       const session = JSON.stringify(val);
       db.prepare(
-        `INSERT INTO auth_session (key, session) VALUES (?, ?)
+        `INSERT INTO ${tableName} (key, session) VALUES (?, ?)
          ON CONFLICT (key) DO UPDATE SET session = ?`,
       ).run(key, session, session);
     },
     del(key: string) {
-      db.prepare(`DELETE FROM auth_session WHERE key = ?`).run(key);
+      db.prepare(`DELETE FROM ${tableName} WHERE key = ?`).run(key);
     },
   };
 }
@@ -1847,6 +1913,9 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
     if (pathname === OAUTH_ROUTES.login) {
       let handle: string | undefined;
       const clientType = searchParams.get("client");
+      const oauthClient = clientType === "native"
+        ? ctx.oauthClientNative
+        : ctx.oauthClient;
 
       if (clientType === "native") {
         handle = searchParams.get("handle") ?? undefined;
@@ -1871,7 +1940,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       }
 
       try {
-        const url = await ctx.oauthClient.authorize(handle, {
+        const url = await oauthClient.authorize(handle, {
           signal: req.signal,
           state: clientType ?? undefined,
         });
@@ -1905,7 +1974,15 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
           });
         }
 
-        const { session, state } = await ctx.oauthClient.callback(searchParams);
+        const stateKey = searchParams.get("state");
+        const stateData = ctx.indexService.getState(stateKey ?? "");
+        const state = stateData?.appState;
+
+        const oauthClient = state === "native"
+          ? ctx.oauthClientNative
+          : ctx.oauthClient;
+
+        const { session } = await oauthClient.callback(searchParams);
 
         const agent = new Agent(session);
 
@@ -2055,7 +2132,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         return ctx.json({ message: "Unauthorized" }, 401);
       }
       const did = ctx.currentUser.did;
-      await ctx.oauthClient.revoke(did);
+      await ctx.oauthClientNative.revoke(did);
       return ctx.json(null);
     }
 
@@ -2065,8 +2142,8 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       }
       const did = ctx.currentUser.did;
       try {
-        const atprotoSession = await ctx.oauthClient.restore(did);
-        const rawSession = ctx.indexService.getSession(did);
+        const atprotoSession = await ctx.oauthClientNative.restore(did);
+        const rawSession = ctx.indexService.getSession(did, "native");
         ctx.agent = new Agent(atprotoSession);
         if (!ctx.cfg.jwtSecret) {
           throw new Error("BFF_JWT_SECRET secret is not configured");
