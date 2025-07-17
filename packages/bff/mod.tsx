@@ -1113,7 +1113,7 @@ function composeMiddlewares({
       // Try to parse DID from JWT in Authorization header
       sessionDid = parseJwtFromAuthHeader(req, cfg);
       if (sessionDid) {
-        const oauthSession = await oauthClient.restore(sessionDid);
+        const oauthSession = await oauthClient.restore(sessionDid, false);
         agent = new Agent(oauthSession);
       }
     }
@@ -1833,6 +1833,8 @@ export const OAUTH_ROUTES = {
   logout: "/logout",
   clientMetadata: "/oauth-client-metadata.json",
   jwks: "/oauth/jwks.json",
+  getSession: "/oauth/session",
+  revokeSession: "/oauth/revoke",
 };
 
 export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
@@ -1943,13 +1945,19 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
           }
 
           const token = jwt.sign({ did: session.did }, ctx.cfg.jwtSecret, {
-            // @TODO: come back to this
-            expiresIn: "48h",
+            expiresIn: 60 * 15, // 15 minutes in seconds
           });
 
-          return ctx.redirect(
-            ctx.cfg.tokenCallbackUrl + `?token=${encodeURIComponent(token)}`,
-          );
+          const redirectPath = await opts?.onSignedIn?.({ actor, ctx });
+
+          // Add redirect path to the token URL if present
+          let url = ctx.cfg.tokenCallbackUrl +
+            `?token=${encodeURIComponent(token)}`;
+          if (redirectPath) {
+            url += `&redirect=${encodeURIComponent(redirectPath)}`;
+          }
+
+          return ctx.redirect(url);
         }
 
         const redirectPath = await opts?.onSignedIn?.({ actor, ctx });
@@ -2040,6 +2048,54 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       return new Response(JSON.stringify(ctx.oauthClient.jwks), {
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    if (pathname === OAUTH_ROUTES.revokeSession && req.method === "POST") {
+      if (!ctx.currentUser) {
+        return ctx.json({ message: "Unauthorized" }, 401);
+      }
+      const did = ctx.currentUser.did;
+      await ctx.oauthClient.revoke(did);
+      return ctx.json(null);
+    }
+
+    if (pathname === OAUTH_ROUTES.getSession) {
+      if (!ctx.currentUser) {
+        return ctx.json({ message: "Unauthorized" }, 401);
+      }
+      const did = ctx.currentUser.did;
+      try {
+        const atprotoSession = await ctx.oauthClient.restore(did);
+        const rawSession = ctx.indexService.getSession(did);
+        ctx.agent = new Agent(atprotoSession);
+        if (!ctx.cfg.jwtSecret) {
+          throw new Error("BFF_JWT_SECRET secret is not configured");
+        }
+        let expiresIn = 0;
+        const tokenInfo = await atprotoSession.getTokenInfo();
+        if (tokenInfo.expiresAt) {
+          const expMs = new Date(tokenInfo.expiresAt).getTime() - Date.now();
+          expiresIn = Math.floor(expMs / 1000);
+        }
+        // Generate a new JWT with expiration matching the session
+        const token = jwt.sign({ did }, ctx.cfg.jwtSecret, {
+          expiresIn: expiresIn > 0 ? expiresIn : 60 * 15, // 15 minutes
+        });
+        return ctx.json({
+          session: {
+            accessToken: rawSession?.tokenSet?.access_token,
+            tokenType: rawSession?.tokenSet?.token_type,
+            expiresAt: rawSession?.tokenSet?.expires_at,
+            issuer: rawSession?.tokenSet?.iss,
+            subject: rawSession?.tokenSet?.sub,
+            dpopJwk: rawSession?.dpopJwk,
+          },
+          token,
+        });
+      } catch (err) {
+        console.error("Failed to refresh token:", err);
+        return ctx.json({ message: "Failed to refresh token" }, 500);
+      }
     }
 
     return ctx.next();
