@@ -2158,6 +2158,12 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         const token = jwt.sign({ did }, ctx.cfg.jwtSecret, {
           expiresIn: expiresIn > 0 ? expiresIn : 60 * 15, // 15 minutes
         });
+
+        const atpData = await ctx.didResolver.resolveAtprotoData(did);
+        if (!atpData) {
+          throw new Error("Failed to resolve Atproto data");
+        }
+
         return ctx.json({
           session: {
             accessToken: rawSession?.tokenSet?.access_token,
@@ -2168,6 +2174,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
             dpopJwk: rawSession?.dpopJwk,
           },
           token,
+          pds: atpData.pds,
         });
       } catch (err) {
         console.error("Failed to refresh token:", err);
