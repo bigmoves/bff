@@ -249,6 +249,14 @@ export type IndexService = {
     applicationType: ApplicationType,
   ) => NodeSavedSession | undefined;
   getState: (key: string) => NodeSavedState | undefined;
+  insertAuthToken: (
+    did: string,
+    refreshToken: string,
+    issuedAt: string,
+    expiresAt: string,
+  ) => void;
+  deleteAuthToken: (did: string) => void;
+  getActorByRefreshToken: (refreshToken: string) => ActorTable | undefined;
 };
 
 export type BffContext<State = Record<string, unknown>> = {

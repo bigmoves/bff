@@ -26,6 +26,7 @@ import { serveDir } from "@std/http/file-server";
 import { join } from "@std/path/join";
 import jwt from "jsonwebtoken";
 import { Buffer } from "node:buffer";
+import { randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, VNode } from "preact";
 import { render as renderToString } from "preact-render-to-string";
@@ -292,6 +293,13 @@ function createDb(cfg: BffConfig) {
     CREATE TABLE IF NOT EXISTS "auth_state_native" (
       "key" TEXT PRIMARY KEY NOT NULL,
       "state" TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_token (
+      did TEXT PRIMARY KEY NOT NULL,
+      refreshToken TEXT NOT NULL,
+      issuedAt TEXT NOT NULL,
+      expiresAt TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS "actor" (
@@ -1064,6 +1072,30 @@ const indexService = (
       }
       return undefined;
     },
+    insertAuthToken: (
+      did: string,
+      refreshToken: string,
+      issuedAt: string,
+      expiresAt: string,
+    ) => {
+      db.prepare(
+        `INSERT INTO auth_token (did, refreshToken, issuedAt, expiresAt)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(did) DO UPDATE SET refreshToken = excluded.refreshToken, issuedAt = excluded.issuedAt, expiresAt = excluded.expiresAt`,
+      ).run(did, refreshToken, issuedAt, expiresAt);
+    },
+    deleteAuthToken: (did: string) => {
+      db.prepare(`DELETE FROM auth_token WHERE did = ?`).run(did);
+    },
+    getActorByRefreshToken: (refreshToken: string): ActorTable | undefined => {
+      const tokenRow = db.prepare(
+        `SELECT did FROM auth_token WHERE refreshToken = ?`,
+      ).get(refreshToken) as { did?: string } | undefined;
+      if (!tokenRow?.did) return undefined;
+      return db.prepare(`SELECT * FROM actor WHERE did = ?`).get(
+        tokenRow.did,
+      ) as ActorTable | undefined;
+    },
   };
 };
 
@@ -1162,7 +1194,7 @@ function composeMiddlewares({
       // Try to parse DID from JWT in Authorization header
       sessionDid = parseJwtFromAuthHeader(req, cfg);
       if (sessionDid) {
-        const oauthSession = await oauthClientNative.restore(sessionDid, false);
+        const oauthSession = await oauthClientNative.restore(sessionDid);
         agent = new Agent(oauthSession);
       }
     }
@@ -1899,8 +1931,9 @@ export const OAUTH_ROUTES = {
   logout: "/logout",
   clientMetadata: "/oauth-client-metadata.json",
   jwks: "/oauth/jwks.json",
-  getSession: "/oauth/session",
-  revokeSession: "/oauth/revoke",
+  session: "/api/session",
+  refreshToken: "/api/token/refresh",
+  revokeToken: "/api/token/revoke",
 };
 
 export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
@@ -2017,23 +2050,33 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
             throw new Error("BFF_JWT_SECRET secret is not configured");
           }
 
-          if (!ctx.cfg.tokenCallbackUrl) {
-            throw new Error("tokenCallbackUrl is not configured");
-          }
-
-          const token = jwt.sign({ did: session.did }, ctx.cfg.jwtSecret, {
-            expiresIn: 60 * 15, // 15 minutes in seconds
-          });
-
+          const expiresIn = 60 * 15; // 15 minutes
+          const now = Math.floor(Date.now() / 1000);
+          const expiresAt = now + expiresIn;
+          const expiresAtStr = new Date(expiresAt * 1000).toISOString();
+          const token = jwt.sign(
+            { did: session.did },
+            ctx.cfg.jwtSecret,
+            {
+              expiresIn,
+            },
+          );
+          const refreshToken = randomBytes(32).toString("hex");
+          ctx.indexService.insertAuthToken(
+            session.did,
+            refreshToken,
+            new Date().toISOString(),
+            expiresAtStr,
+          );
+          let url =
+            `${ctx.cfg.tokenCallbackUrl}?token=${encodeURIComponent(token)}` +
+            `&refreshToken=${encodeURIComponent(refreshToken)}` +
+            `&expiresAt=${expiresAtStr}` +
+            `&did=${encodeURIComponent(session.did)}`;
           const redirectPath = await opts?.onSignedIn?.({ actor, ctx });
-
-          // Add redirect path to the token URL if present
-          let url = ctx.cfg.tokenCallbackUrl +
-            `?token=${encodeURIComponent(token)}`;
           if (redirectPath) {
             url += `&redirect=${encodeURIComponent(redirectPath)}`;
           }
-
           return ctx.redirect(url);
         }
 
@@ -2127,59 +2170,73 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       });
     }
 
-    if (pathname === OAUTH_ROUTES.revokeSession && req.method === "POST") {
-      if (!ctx.currentUser) {
-        return ctx.json({ message: "Unauthorized" }, 401);
-      }
-      const did = ctx.currentUser.did;
-      await ctx.oauthClientNative.revoke(did);
-      return ctx.json(null);
-    }
-
-    if (pathname === OAUTH_ROUTES.getSession) {
+    if (pathname === OAUTH_ROUTES.session) {
       if (!ctx.currentUser) {
         return ctx.json({ message: "Unauthorized" }, 401);
       }
       const did = ctx.currentUser.did;
       try {
-        const atprotoSession = await ctx.oauthClientNative.restore(did);
-        const rawSession = ctx.indexService.getSession(did, "native");
-        ctx.agent = new Agent(atprotoSession);
         if (!ctx.cfg.jwtSecret) {
           throw new Error("BFF_JWT_SECRET secret is not configured");
         }
-        let expiresIn = 0;
-        const tokenInfo = await atprotoSession.getTokenInfo();
-        if (tokenInfo.expiresAt) {
-          const expMs = new Date(tokenInfo.expiresAt).getTime() - Date.now();
-          expiresIn = Math.floor(expMs / 1000);
-        }
-        // Generate a new JWT with expiration matching the session
+        const expiresIn = 60 * 15; // 15 minutes
+        const now = Math.floor(Date.now() / 1000);
+        const expiresAt = now + expiresIn;
         const token = jwt.sign({ did }, ctx.cfg.jwtSecret, {
-          expiresIn: expiresIn > 0 ? expiresIn : 60 * 15, // 15 minutes
+          expiresIn,
         });
-
-        const atpData = await ctx.didResolver.resolveAtprotoData(did);
-        if (!atpData) {
-          throw new Error("Failed to resolve Atproto data");
-        }
-
+        const refreshToken = randomBytes(32).toString("hex");
         return ctx.json({
-          session: {
-            accessToken: rawSession?.tokenSet?.access_token,
-            tokenType: rawSession?.tokenSet?.token_type,
-            expiresAt: rawSession?.tokenSet?.expires_at,
-            issuer: rawSession?.tokenSet?.iss,
-            subject: rawSession?.tokenSet?.sub,
-            dpopJwk: rawSession?.dpopJwk,
-          },
           token,
-          pds: atpData.pds,
+          refreshToken,
+          did,
+          expiresAt: new Date(expiresAt * 1000).toISOString(),
         });
       } catch (err) {
         console.error("Failed to refresh token:", err);
         return ctx.json({ message: "Failed to refresh token" }, 500);
       }
+    }
+
+    if (pathname === OAUTH_ROUTES.refreshToken && req.method === "POST") {
+      const { refreshToken } = await req.json();
+      const actor = ctx.indexService.getActorByRefreshToken(refreshToken);
+      if (!actor) {
+        return ctx.json({ message: "Invalid refresh token" }, 401);
+      }
+      const expiresIn = 60 * 15; // 15 minutes
+      const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+      const token = jwt.sign(
+        { did: actor.did },
+        ctx.cfg.jwtSecret,
+        {
+          expiresIn,
+        },
+      );
+      const newRefreshToken = randomBytes(32).toString("hex");
+      ctx.indexService.insertAuthToken(
+        actor.did,
+        newRefreshToken,
+        new Date(expiresAt * 1000).toISOString(),
+        new Date().toISOString(),
+      );
+      return ctx.json({
+        token,
+        refreshToken: newRefreshToken,
+        did: actor.did,
+        expiresAt,
+      });
+    }
+
+    if (pathname === OAUTH_ROUTES.revokeToken && req.method === "POST") {
+      const { refreshToken } = await req.json();
+      const actor = ctx.indexService.getActorByRefreshToken(refreshToken);
+      if (!actor) {
+        return ctx.json({ message: "Invalid refresh token" }, 401);
+      }
+      ctx.indexService.deleteAuthToken(actor.did);
+      await ctx.oauthClientNative.revoke(actor.did);
+      return ctx.json({ message: "Token revoked successfully" });
     }
 
     return ctx.next();
