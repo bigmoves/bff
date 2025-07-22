@@ -2206,6 +2206,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       }
       const expiresIn = 60 * 15; // 15 minutes
       const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+      const expiresAtStr = new Date(expiresAt * 1000).toISOString();
       const token = jwt.sign(
         { did: actor.did },
         ctx.cfg.jwtSecret,
@@ -2218,13 +2219,13 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         actor.did,
         newRefreshToken,
         new Date().toISOString(),
-        new Date(expiresAt * 1000).toISOString(),
+        expiresAtStr,
       );
       return ctx.json({
         token,
         refreshToken: newRefreshToken,
         did: actor.did,
-        expiresAt,
+        expiresAtStr,
       });
     }
 
