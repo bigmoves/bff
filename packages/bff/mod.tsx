@@ -2182,6 +2182,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         const expiresIn = 60 * 15; // 15 minutes
         const now = Math.floor(Date.now() / 1000);
         const expiresAt = now + expiresIn;
+        const expiresAtStr = new Date(expiresAt * 1000).toISOString();
         const token = jwt.sign({ did }, ctx.cfg.jwtSecret, {
           expiresIn,
         });
@@ -2190,7 +2191,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
           token,
           refreshToken,
           did,
-          expiresAt: new Date(expiresAt * 1000).toISOString(),
+          expiresAt: expiresAtStr,
         });
       } catch (err) {
         console.error("Failed to refresh token:", err);
@@ -2225,7 +2226,7 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
         token,
         refreshToken: newRefreshToken,
         did: actor.did,
-        expiresAtStr,
+        expiresAt: expiresAtStr,
       });
     }
 
