@@ -2217,8 +2217,8 @@ export function oauth(opts?: OauthMiddlewareOptions): BffMiddleware {
       ctx.indexService.insertAuthToken(
         actor.did,
         newRefreshToken,
-        new Date(expiresAt * 1000).toISOString(),
         new Date().toISOString(),
+        new Date(expiresAt * 1000).toISOString(),
       );
       return ctx.json({
         token,
