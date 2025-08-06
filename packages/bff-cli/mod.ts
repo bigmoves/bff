@@ -144,6 +144,7 @@ if (import.meta.main) {
       "external-collections",
       "collection-key-map",
       "unstable-lexicons",
+      "lexicon-dir",
     ],
     alias: { h: "help" },
     "--": true,
@@ -174,7 +175,8 @@ if (import.meta.main) {
       }
       break;
     case "lexgen": {
-      await codegen();
+      const lexiconDir = flags["lexicon-dir"] || LEXICON_DIR;
+      await codegen(lexiconDir);
       break;
     }
     case "generate-jwks": {
@@ -343,6 +345,7 @@ function printHelp(): void {
   console.log("  sync                      Sync collections to the database");
   console.log("\nOptional flags:");
   console.log("  -h, --help                Display help");
+  console.log("  --lexicon-dir <dir>       Specify lexicon directory (default: lexicons)");
   Deno.exit(0);
 }
 
