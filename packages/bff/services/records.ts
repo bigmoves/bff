@@ -3,7 +3,8 @@ import { TID } from "@atproto/common";
 import { stringifyLex } from "@atproto/lexicon";
 import { AtUri } from "@atproto/syntax";
 import { assert } from "@std/assert";
-import type { BffConfig, IndexService } from "../types.d.ts";
+import type { BffConfig } from "../types.d.ts";
+import type { IndexService } from "./indexing.ts";
 
 export function createRecord(
   agent: Agent | undefined,

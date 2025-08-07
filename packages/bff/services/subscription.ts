@@ -1,9 +1,10 @@
 import { stringifyLex } from "@atproto/lexicon";
 import { Jetstream } from "../clients/jetstream.ts";
-import type { BffConfig, IndexService } from "../types.d.ts";
+import type { BffConfig } from "../types.d.ts";
 import { hydrateBlobRefs } from "../utils.ts";
-import { getInstanceInfo } from "../utils/litefs.ts";
 import { parseJwtFromAuthHeader } from "../utils/auth.ts";
+import { getInstanceInfo } from "../utils/litefs.ts";
+import type { IndexService } from "./indexing.ts";
 
 // Global WebSocket clients map
 export const wsClients = new Map<string, Set<WebSocket>>();

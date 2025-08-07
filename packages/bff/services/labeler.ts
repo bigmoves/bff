@@ -1,8 +1,9 @@
 import { Agent } from "@atproto/api";
-import { type AtprotoData, DidResolver } from "@atproto/identity";
+import type { AtprotoData, DidResolver } from "@atproto/identity";
 import { TtlCache } from "@std/cache";
 import Labeler from "../clients/labeler.ts";
-import type { BffConfig, IndexService, LabelerPolicies } from "../types.d.ts";
+import type { BffConfig, LabelerPolicies } from "../types.d.ts";
+import type { IndexService } from "./indexing.ts";
 
 export function getLabelerDefinitions(
   didResolver: DidResolver,

@@ -2,8 +2,9 @@ import { Agent } from "@atproto/api";
 import { type AtprotoData, DidResolver, MemoryCache } from "@atproto/identity";
 import { stringifyLex } from "@atproto/lexicon";
 import { AtUri } from "@atproto/syntax";
-import type { BffConfig, IndexService } from "../types.d.ts";
+import type { BffConfig } from "../types.d.ts";
 import type { RecordTableWithoutIndexedAt } from "../types/index.ts";
+import type { IndexService } from "./indexing.ts";
 
 const atpCache = new MemoryCache();
 

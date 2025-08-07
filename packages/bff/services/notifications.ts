@@ -1,4 +1,5 @@
-import type { ActorTable, IndexService } from "../types.d.ts";
+import type { ActorTable } from "../types.d.ts";
+import type { IndexService } from "./indexing.ts";
 
 export function getNotifications(
   currentUser: ActorTable | undefined,

@@ -1,18 +1,14 @@
 import type {
-  Label,
   LabelValue,
   LabelValueDefinition,
 } from "$lexicon/types/com/atproto/label/defs.ts";
 import type { Agent } from "@atproto/api";
 import type { DidResolver } from "@atproto/identity";
 import type { BlobRef, Lexicons } from "@atproto/lexicon";
-import type {
-  AtprotoOAuthClient,
-  NodeSavedSession,
-  NodeSavedState,
-} from "@bigmoves/atproto-oauth-client";
+import type { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
 import type { DatabaseSync } from "node:sqlite";
 import type { ComponentChildren, FunctionComponent, VNode } from "preact";
+import type { IndexService } from "./services/indexing.ts";
 
 export type Database = DatabaseSync;
 
@@ -213,51 +209,6 @@ export type RecordKvTable = {
 
 export type ApplicationType = "web" | "native";
 
-export type IndexService = {
-  getRecords: <T extends Record<string, unknown>>(
-    collection: string,
-    opts?: QueryOptions,
-  ) => { items: T[]; cusor?: string };
-  getRecord: <T extends Record<string, unknown>>(
-    uri: string,
-  ) => T | undefined;
-  insertRecord: (record: RecordTable) => void;
-  updateRecord: (record: RecordTable) => void;
-  countRecords: (collection: string, options?: QueryOptions) => number;
-  deleteRecord: (uri: string) => void;
-  insertActor: (actor: ActorTable) => void;
-  getActor: (did: string) => ActorTable | undefined;
-  getActorByHandle: (handle: string) => ActorTable | undefined;
-  searchActors: (
-    query: string,
-    opts?: { limit?: number },
-  ) => ActorTable[];
-  getMentioningUris: (
-    did: string,
-  ) => string[];
-  updateActor: (did: string, lastSeenNotifs: string) => void;
-  insertLabel: (label: LabelTable) => void;
-  queryLabels: (
-    options: {
-      subjects: string[];
-      issuers?: string[];
-    },
-  ) => Label[];
-  clearLabels: () => void;
-  getSession: (
-    key: string,
-    applicationType: ApplicationType,
-  ) => NodeSavedSession | undefined;
-  getState: (key: string) => NodeSavedState | undefined;
-  insertAuthToken: (
-    did: string,
-    refreshToken: string,
-    issuedAt: string,
-    expiresAt: string,
-  ) => void;
-  deleteAuthToken: (did: string) => void;
-  getActorByRefreshToken: (refreshToken: string) => ActorTable | undefined;
-};
 
 export type BffContext<State = Record<string, unknown>> = {
   state: State;

@@ -1,6 +1,5 @@
 import { DidResolver, MemoryCache } from "@atproto/identity";
 import * as colors from "@std/fmt/colors";
-import { RateLimitError, UnauthorizedError } from "./utils/errors.ts";
 import { createOauthClient } from "./middleware/oauth.tsx";
 import { createIndexService } from "./services/indexing.ts";
 import { createLabelerSubscriptions } from "./services/labeler.ts";
@@ -11,11 +10,11 @@ import {
 import type { BffOptions } from "./types.d.ts";
 import { configureBff } from "./utils/config.ts";
 import { createDb } from "./utils/database.ts";
+import { RateLimitError, UnauthorizedError } from "./utils/errors.ts";
 import { createBffHandler } from "./utils/handler.ts";
 import { generateFingerprints } from "./utils/static_files.ts";
 
 export { JETSTREAM } from "./clients/jetstream.ts";
-export { RateLimitError, UnauthorizedError } from "./utils/errors.ts";
 export { oauth, OAUTH_ROUTES } from "./middleware/oauth.tsx";
 export { backfillCollections, backfillUris } from "./services/backfill.ts";
 export type {
@@ -32,6 +31,7 @@ export type {
   RouteHandler,
   WithBffMeta,
 } from "./types.d.ts";
+export { RateLimitError, UnauthorizedError } from "./utils/errors.ts";
 export { route } from "./utils/routing.ts";
 
 export { CSS } from "./styles.ts";
@@ -48,7 +48,7 @@ export async function bff(opts: BffOptions) {
   const fileFingerprints = await generateFingerprints(bffConfig);
 
   const db = createDb(bffConfig);
-  const idxService = createIndexService(db, bffConfig);
+  const indexService = createIndexService(db, bffConfig);
   const oauthClient = await createOauthClient(db, bffConfig);
   const oauthClientNative = await createOauthClient(db, bffConfig, "native");
   const handler = createBffHandler({
@@ -58,12 +58,12 @@ export async function bff(opts: BffOptions) {
     cfg: bffConfig,
     didResolver,
     fileFingerprints,
-    indexService: createIndexService,
+    indexService,
   });
-  const jetstream = createSubscription(idxService, bffConfig);
+  const jetstream = createSubscription(indexService, bffConfig);
   const labelerMap = await createLabelerSubscriptions(
     didResolver,
-    idxService,
+    indexService,
     bffConfig,
   );
 
@@ -86,7 +86,7 @@ export async function bff(opts: BffOptions) {
 
   // TODO: maybe should be onBeforeListen
   await bffConfig.onListen?.({
-    indexService: idxService,
+    indexService,
     cfg: bffConfig,
   });
 

@@ -1,14 +1,9 @@
 import { Agent } from "@atproto/api";
-import { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
-import { DidResolver } from "@atproto/identity";
+import type { DidResolver } from "@atproto/identity";
+import type { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
 import { getCookies } from "@std/http";
-import type { ActorTable, BffConfig, BffContext, Database } from "../types.d.ts";
-import { parseJwtFromAuthHeader } from "../utils/auth.ts";
-import { parseCookie } from "../utils/cookies.ts";
-import { rateLimit } from "../utils/rate-limit.ts";
-import { html, json, redirect, render } from "../utils/response.tsx";
-import { composeHandlers } from "../utils/routing.ts";
 import { backfillCollections, backfillUris } from "../services/backfill.ts";
+import type { IndexService } from "../services/indexing.ts";
 import { getLabelerDefinitions } from "../services/labeler.ts";
 import { getNotifications, updateSeen } from "../services/notifications.ts";
 import {
@@ -18,8 +13,18 @@ import {
   updateRecord,
   updateRecords,
 } from "../services/records.ts";
+import type {
+  ActorTable,
+  BffConfig,
+  BffContext,
+  Database,
+} from "../types.d.ts";
+import { parseJwtFromAuthHeader, requireAuth } from "../utils/auth.ts";
 import { uploadBlob } from "../utils/blob.ts";
-import { requireAuth } from "../utils/auth.ts";
+import { parseCookie } from "../utils/cookies.ts";
+import { rateLimit } from "../utils/rate_limit.ts";
+import { html, json, redirect, render } from "../utils/response.tsx";
+import { composeHandlers } from "../utils/routing.ts";
 
 export function composeMiddlewares({
   db,
@@ -36,15 +41,13 @@ export function composeMiddlewares({
   cfg: BffConfig;
   didResolver: DidResolver;
   fileFingerprints: Map<string, string>;
-  indexService: (db: Database, cfg: BffConfig) => any;
+  indexService: IndexService;
 }) {
   return async (
     req: Request,
     _connInfo: Deno.ServeHandlerInfo,
     inner: (req: Request, ctx: BffContext) => Promise<Response>,
   ) => {
-    const idxService = indexService(db, cfg);
-
     let agent: Agent | undefined;
     let currentUser: ActorTable | undefined;
 
@@ -74,28 +77,28 @@ export function composeMiddlewares({
     }
 
     if (agent && sessionDid) {
-      const actor = idxService.getActor(sessionDid);
+      const actor = indexService.getActor(sessionDid);
       currentUser = actor;
     }
 
-    const createRecordFn = createRecord(agent, idxService, cfg);
-    const createRecordsFn = createRecords(agent, idxService, cfg);
-    const updateRecordFn = updateRecord(agent, idxService, cfg);
-    const updateRecordsFn = updateRecords(agent, idxService, cfg);
-    const deleteRecordFn = deleteRecord(agent, idxService);
-    const backfillCollectionsFn = backfillCollections(idxService, cfg);
-    const backfillUrisFn = backfillUris(idxService, cfg);
+    const createRecordFn = createRecord(agent, indexService, cfg);
+    const createRecordsFn = createRecords(agent, indexService, cfg);
+    const updateRecordFn = updateRecord(agent, indexService, cfg);
+    const updateRecordsFn = updateRecords(agent, indexService, cfg);
+    const deleteRecordFn = deleteRecord(agent, indexService);
+    const backfillCollectionsFn = backfillCollections(indexService, cfg);
+    const backfillUrisFn = backfillUris(indexService, cfg);
     const uploadBlobFn = uploadBlob(agent);
     const rateLimitFn = rateLimit(req, currentUser, db);
-    const getNotificationsFn = getNotifications(currentUser, idxService);
-    const updateSeenFn = updateSeen(currentUser, idxService);
+    const getNotificationsFn = getNotifications(currentUser, indexService);
+    const updateSeenFn = updateSeen(currentUser, indexService);
     const getLabelerDefinitionsFn = getLabelerDefinitions(didResolver, cfg);
 
     const ctx: BffContext = {
       state: {},
       oauthClient,
       oauthClientNative,
-      indexService: idxService,
+      indexService: indexService,
       currentUser,
       agent,
       createRecord: createRecordFn,

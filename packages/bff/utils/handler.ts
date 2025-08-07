@@ -1,7 +1,8 @@
-import { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
-import { DidResolver } from "@atproto/identity";
-import type { BffConfig, Database } from "../types.d.ts";
+import type { DidResolver } from "@atproto/identity";
+import type { AtprotoOAuthClient } from "@bigmoves/atproto-oauth-client";
 import { composeMiddlewares } from "../middleware/compose.ts";
+import type { IndexService } from "../services/indexing.ts";
+import type { BffConfig, Database } from "../types.d.ts";
 import { handler } from "./routing.ts";
 
 export function createBffHandler({
@@ -19,7 +20,7 @@ export function createBffHandler({
   cfg: BffConfig;
   didResolver: DidResolver;
   fileFingerprints: Map<string, string>;
-  indexService: (db: Database, cfg: BffConfig) => any;
+  indexService: IndexService;
 }) {
   const inner = handler;
   const withMiddlewares = composeMiddlewares({
