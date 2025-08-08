@@ -5,6 +5,7 @@
     "jsr:@deno/gfm@0.10": "0.10.0",
     "jsr:@denosaurs/emoji@0.3": "0.3.1",
     "jsr:@luca/esbuild-deno-loader@~0.11.1": "0.11.1",
+    "jsr:@std/assert@1": "1.0.13",
     "jsr:@std/assert@^1.0.13": "1.0.13",
     "jsr:@std/async@^1.0.13": "1.0.13",
     "jsr:@std/bytes@^1.0.2": "1.0.6",
@@ -178,7 +179,7 @@
     "@std/testing@1.0.14": {
       "integrity": "144b3737105b9071cb50c957681f58a1b8ec0f3e5b19ad830f401c5fa931e8f0",
       "dependencies": [
-        "jsr:@std/assert",
+        "jsr:@std/assert@^1.0.13",
         "jsr:@std/async",
         "jsr:@std/data-structures",
         "jsr:@std/fs@^1.0.18",

@@ -3,7 +3,6 @@ import type {
   NodeSavedSession,
   NodeSavedState,
 } from "@bigmoves/atproto-oauth-client";
-import { Buffer } from "node:buffer";
 import type {
   ActorTable,
   BffConfig,
@@ -11,76 +10,13 @@ import type {
   LabelTable,
   QueryOptions,
   RecordTable,
-  Where,
-  WhereCondition,
 } from "../types.d.ts";
 import { hydrateBlobRefs } from "../utils.ts";
 import { indexFacets, timedQuery } from "../utils/database.ts";
-
-function buildWhereClause(
-  condition: Where,
-  tableColumns: string[],
-  indexedKeys: Set<string>,
-  params: Array<string | number | boolean>,
-  kvAliasMap?: Record<string, string>,
-): string {
-  if (Array.isArray(condition)) {
-    return condition.map((c) =>
-      buildWhereClause(c, tableColumns, indexedKeys, params, kvAliasMap)
-    ).join(
-      " AND ",
-    );
-  }
-  if ("AND" in condition) {
-    const parts = condition.AND!.map((c) =>
-      `(${buildWhereClause(c, tableColumns, indexedKeys, params, kvAliasMap)})`
-    );
-    return parts.join(" AND ");
-  }
-  if ("OR" in condition) {
-    const parts = condition.OR!.map((c) =>
-      `(${buildWhereClause(c, tableColumns, indexedKeys, params, kvAliasMap)})`
-    );
-    return parts.join(" OR ");
-  }
-  if ("NOT" in condition) {
-    return `NOT (${
-      buildWhereClause(
-        condition.NOT!,
-        tableColumns,
-        indexedKeys,
-        params,
-        kvAliasMap,
-      )
-    })`;
-  }
-  const { field, equals, contains, in: inArray } = condition as WhereCondition;
-  if (!field) throw new Error("Missing 'field' in condition");
-  const isDirect = tableColumns.includes(field);
-  const isIndexed = indexedKeys.has(field);
-  let columnExpr;
-  if (isDirect) {
-    columnExpr = `record.${field}`;
-  } else if (isIndexed && kvAliasMap && kvAliasMap[field]) {
-    columnExpr = `${kvAliasMap[field]}.value`;
-  } else {
-    columnExpr = `JSON_EXTRACT(json, '$.${field}')`;
-  }
-  if (equals !== undefined) {
-    params.push(equals);
-    return `${columnExpr} = ?`;
-  }
-  if (inArray) {
-    const placeholders = inArray.map(() => "?").join(", ");
-    params.push(...inArray);
-    return `${columnExpr} IN (${placeholders})`;
-  }
-  if (contains !== undefined) {
-    params.push(`%${contains}%`);
-    return `${columnExpr} LIKE ?`;
-  }
-  throw new Error("Unsupported condition format");
-}
+import { QueryBuilder } from "./query/QueryBuilder.ts";
+import { CursorManager } from "./query/CursorManager.ts";
+import { JoinBuilder } from "./query/JoinBuilder.ts";
+import { OrderBuilder } from "./query/OrderBuilder.ts";
 
 export class IndexService {
   constructor(
@@ -103,37 +39,27 @@ export class IndexService {
     const collectionKeyMap = this.collectionKeyMap;
     const indexedKeys = collectionKeyMap[collection] || [];
     const tableColumns = this.tableColumns;
-    let query: string;
-    let params: (string | number | boolean)[] = [];
-    const kvAliasMap: Record<string, string> = {};
+    const params: (string | number | boolean)[] = [];
 
-    let joinClauses = "";
-    let i = 0;
-    for (const key of indexedKeys) {
-      const alias = `kv${i}`;
-      kvAliasMap[key] = alias;
-      joinClauses +=
-        ` LEFT JOIN record_kv AS ${alias} ON ${alias}.uri = record.uri AND ${alias}.key = ?`;
-      params.push(key);
-      i++;
-    }
+    // Build joins
+    const joinBuilder = new JoinBuilder();
+    const { joinClauses, kvAliasMap } = joinBuilder.buildJoins(
+      indexedKeys,
+      params,
+      options?.facet,
+    );
 
-    // Facet join
-    if (options?.facet) {
-      joinClauses += ` JOIN facet_index ON record.uri = facet_index.uri`;
-    }
-
-    query =
-      `SELECT record.* FROM record${joinClauses} WHERE record.collection = ?`;
+    // Build base query
+    let query = `SELECT record.* FROM record${joinClauses} WHERE record.collection = ?`;
     params.push(collection);
 
-    // Facet filter
+    // Add facet filter
     if (options?.facet) {
       query += ` AND facet_index.type = ? AND facet_index.value = ?`;
       params.push(options.facet.type, options.facet.value);
     }
 
-    // Only add kvN.value = ? for indexed keys present in the where clause
+    // Handle indexed key-value pairs
     const normalizedWhere = Array.isArray(options?.where)
       ? { AND: options.where }
       : options?.where;
@@ -147,7 +73,6 @@ export class IndexService {
         ) {
           value = String(normalizedWhere.equals);
         }
-        // TODO: handle nested/AND/OR if needed
         if (value !== undefined) {
           extraKvClauses.push(`${kvAliasMap[key]}.value = ?`);
           params.push(value);
@@ -158,151 +83,47 @@ export class IndexService {
       query += ` AND ` + extraKvClauses.join(" AND ");
     }
 
-    // Now add the rest of the where clause (for non-indexed keys)
+    // Add WHERE clause for non-indexed keys
     if (normalizedWhere) {
       try {
-        const whereClause = buildWhereClause(
-          normalizedWhere,
+        const queryBuilder = new QueryBuilder(
           tableColumns,
           new Set(indexedKeys),
-          params,
           kvAliasMap,
         );
+        const whereClause = queryBuilder.buildWhereClause(normalizedWhere, params);
         if (whereClause) query += ` AND (${whereClause})`;
       } catch (err) {
         console.warn("Invalid where clause", err);
       }
     }
 
+    // Add cursor pagination
     if (options?.cursor) {
-      try {
-        const orderByClauses = options?.orderBy ||
-          [{ field: "indexedAt", direction: "asc" }];
-
-        const decoded = Buffer.from(options.cursor, "base64").toString(
-          "utf-8",
-        );
-        const cursorParts = decoded.split("|");
-
-        // The last part is always the CID
-        const cursorCid = cursorParts[cursorParts.length - 1];
-
-        if (cursorParts.length - 1 !== orderByClauses.length) {
-          console.warn("Cursor format doesn't match orderBy fields count");
-          throw new Error("Invalid cursor format");
-        }
-
-        // Build the WHERE condition for pagination with multiple fields
-        let cursorCondition = "(";
-        const clauses: string[] = [];
-
-        for (let i = 0; i < orderByClauses.length; i++) {
-          const { field, direction = "asc" } = orderByClauses[i];
-          const cursorValue = cursorParts[i];
-          const comparisonOp = direction === "desc" ? "<" : ">";
-
-          // Build progressive equality checks for earlier columns
-          if (i > 0) {
-            let equalityCheck = "(";
-            for (let j = 0; j < i; j++) {
-              const equalField = orderByClauses[j].field;
-              const equalValue = cursorParts[j];
-
-              if (j > 0) equalityCheck += " AND ";
-
-              if (tableColumns.includes(equalField)) {
-                equalityCheck += `${equalField} = ?`;
-              } else {
-                equalityCheck += `JSON_EXTRACT(json, '$.${equalField}') = ?`;
-              }
-              params.push(equalValue);
-            }
-            equalityCheck += " AND ";
-
-            // Add the comparison for the current field
-            if (tableColumns.includes(field)) {
-              equalityCheck += `${field} ${comparisonOp} ?`;
-            } else {
-              equalityCheck +=
-                `JSON_EXTRACT(json, '$.${field}') ${comparisonOp} ?`;
-            }
-            params.push(cursorValue);
-            equalityCheck += ")";
-
-            clauses.push(equalityCheck);
-          } else {
-            // First column is simpler
-            if (tableColumns.includes(field)) {
-              clauses.push(`${field} ${comparisonOp} ?`);
-            } else {
-              clauses.push(
-                `JSON_EXTRACT(json, '$.${field}') ${comparisonOp} ?`,
-              );
-            }
-            params.push(cursorValue);
-          }
-        }
-
-        // Add final equality check on all columns with CID comparison
-        let finalClause = "(";
-        for (let i = 0; i < orderByClauses.length; i++) {
-          const { field } = orderByClauses[i];
-          const cursorValue = cursorParts[i];
-
-          if (i > 0) finalClause += " AND ";
-
-          if (tableColumns.includes(field)) {
-            finalClause += `${field} = ?`;
-          } else {
-            finalClause += `JSON_EXTRACT(json, '$.${field}') = ?`;
-          }
-          params.push(cursorValue);
-        }
-
-        const lastDirection =
-          orderByClauses[orderByClauses.length - 1]?.direction || "asc";
-        const cidComparisonOp = lastDirection === "desc" ? "<" : ">";
-        finalClause += ` AND cid ${cidComparisonOp} ?`;
-        params.push(cursorCid);
-        finalClause += ")";
-
-        clauses.push(finalClause);
-
-        cursorCondition += clauses.join(" OR ") + ")";
+      const orderByClauses = options?.orderBy || [{ field: "indexedAt", direction: "asc" }];
+      const cursorManager = new CursorManager(tableColumns);
+      const cursorCondition = cursorManager.buildCursorCondition(
+        options.cursor,
+        orderByClauses,
+        params,
+      );
+      if (cursorCondition) {
         query += ` AND ${cursorCondition}`;
-      } catch (error) {
-        console.warn("Invalid cursor format", error);
       }
     }
 
-    const orderByClauses = options?.orderBy ||
-      [{ field: "indexedAt", direction: "asc" }];
+    // Add ORDER BY
+    const orderByClauses = options?.orderBy || [{ field: "indexedAt", direction: "asc" }];
+    const orderBuilder = new OrderBuilder(tableColumns);
+    query += orderBuilder.buildOrderClause(orderByClauses);
 
-    if (orderByClauses.length > 0) {
-      const orderParts: string[] = [];
-
-      for (const { field, direction = "asc" } of orderByClauses) {
-        if (tableColumns.includes(field)) {
-          orderParts.push(`${field} ${direction}`);
-        } else {
-          orderParts.push(`JSON_EXTRACT(json, '$.${field}') ${direction}`);
-        }
-      }
-
-      // Always include cid in the ORDER BY to ensure consistent ordering
-      const lastDirection =
-        orderByClauses[orderByClauses.length - 1]?.direction || "asc";
-      orderParts.push(`cid ${lastDirection}`);
-
-      query += ` ORDER BY ${orderParts.join(", ")}`;
-    }
-
+    // Add LIMIT
     if (options?.limit && options.limit > 0) {
       query += ` LIMIT ?`;
       params.push(options.limit.toString());
     }
 
-    // Convert boolean params to 0/1 for SQL compatibility
+    // Execute query
     const sqlParams = params.map((p) =>
       typeof p === "boolean" ? (p ? 1 : 0) : p
     );
@@ -313,42 +134,12 @@ export class IndexService {
       "getRecords",
     );
 
+    // Generate next cursor
     let nextCursor: string | undefined;
     if (rows.length > 0) {
       const lastRow = rows[rows.length - 1];
-      // Convert single item to array if needed for backward compatibility
-      const orderByClauses = options?.orderBy ||
-        [{ field: "indexedAt", direction: "asc" }];
-
-      // Extract all values needed for the cursor
-      const cursorParts: string[] = [];
-
-      for (const { field } of orderByClauses) {
-        if (tableColumns.includes(field)) {
-          // Direct column access
-          cursorParts.push(String(lastRow[field as keyof RecordTable]));
-        } else {
-          // JSON field access
-          const parsedJson = JSON.parse(lastRow.json);
-          const fieldPath = field.split(".");
-          let value = parsedJson;
-
-          // Navigate nested fields
-          for (const key of fieldPath) {
-            if (value === undefined || value === null) break;
-            value = value[key];
-          }
-
-          cursorParts.push(String(value));
-        }
-      }
-
-      // Always add CID as the final part
-      cursorParts.push(lastRow.cid);
-
-      // Join all parts and encode
-      const rawCursor = cursorParts.join("|");
-      nextCursor = Buffer.from(rawCursor, "utf-8").toString("base64");
+      const cursorManager = new CursorManager(tableColumns);
+      nextCursor = cursorManager.generateCursor(lastRow, orderByClauses);
     }
 
     return {
@@ -616,25 +407,17 @@ export class IndexService {
     const collectionKeyMap = this.cfg?.collectionKeyMap || {};
     const indexedKeys = collectionKeyMap[collection] || [];
     const tableColumns = ["did", "uri", "indexedAt", "cid"];
-    let query: string;
     const params: (string | number | boolean)[] = [];
-    const kvAliasMap: Record<string, string> = {};
 
-    let joinClauses = "";
-    let i = 0;
-    for (const key of indexedKeys) {
-      const alias = `kv${i}`;
-      kvAliasMap[key] = alias;
-      joinClauses +=
-        `\nLEFT JOIN record_kv AS ${alias} ON ${alias}.uri = record.uri AND ${alias}.key = ?`;
-      params.push(key);
-      i++;
-    }
-    query =
-      `SELECT COUNT(*) as count FROM record${joinClauses} WHERE record.collection = ?`;
+    // Build joins
+    const joinBuilder = new JoinBuilder();
+    const { joinClauses, kvAliasMap } = joinBuilder.buildJoins(indexedKeys, params);
+
+    // Build base query
+    let query = `SELECT COUNT(*) as count FROM record${joinClauses} WHERE record.collection = ?`;
     params.push(collection);
 
-    // Only add kvN.value = ? if the key is present in the where clause
+    // Handle indexed key-value pairs
     const normalizedWhere = Array.isArray(options?.where)
       ? { AND: options.where }
       : options?.where;
@@ -648,7 +431,6 @@ export class IndexService {
         ) {
           value = String(normalizedWhere.equals);
         }
-        // TODO: handle nested/AND/OR if needed
         if (value !== undefined) {
           extraKvClauses.push(`${kvAliasMap[key]}.value = ?`);
           params.push(value);
@@ -659,22 +441,22 @@ export class IndexService {
       query += ` AND ` + extraKvClauses.join(" AND ");
     }
 
-    // Now add the rest of the where clause (for non-indexed keys)
+    // Add WHERE clause for non-indexed keys
     if (normalizedWhere) {
       try {
-        const whereClause = buildWhereClause(
-          normalizedWhere,
+        const queryBuilder = new QueryBuilder(
           tableColumns,
           new Set(indexedKeys),
-          params,
           kvAliasMap,
         );
+        const whereClause = queryBuilder.buildWhereClause(normalizedWhere, params);
         if (whereClause) query += ` AND (${whereClause})`;
       } catch (err) {
         console.warn("Invalid where clause", err);
       }
     }
-    // Convert boolean params to 0/1 for SQL compatibility
+
+    // Execute query
     const sqlParams = params.map((p) =>
       typeof p === "boolean" ? (p ? 1 : 0) : p
     );

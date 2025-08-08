@@ -8,7 +8,7 @@
       "command": "deno run -A ./bin/styles.ts",
       "dependencies": ["tailwind"]
     },
-    "test": "deno test --allow-read",
+    "test": "deno test -A",
     "test:update-snapshots": "deno test --allow-read --allow-write -- --update",
     "codegen": "deno run -A ../bff-cli/mod.ts lexgen"
   },
