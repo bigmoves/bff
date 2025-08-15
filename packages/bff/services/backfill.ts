@@ -82,9 +82,13 @@ export async function getAtpMapForRepos(
   });
   const atpMap = new Map<string, AtprotoData>();
   for (const repo of repos) {
-    const atpData = await didResolver.resolveAtprotoData(repo);
-    if (!atpMap.has(atpData.did)) {
-      atpMap.set(atpData.did, atpData);
+    try {
+      const atpData = await didResolver.resolveAtprotoData(repo);
+      if (!atpMap.has(atpData.did)) {
+        atpMap.set(atpData.did, atpData);
+      }
+    } catch (error) {
+      console.error(`Failed to resolve Atproto data for repo ${repo}:`, error);
     }
   }
   return atpMap;
